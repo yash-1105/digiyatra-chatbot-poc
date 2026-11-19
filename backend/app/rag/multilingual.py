@@ -340,11 +340,12 @@ HINDI_STOP = {"करता"} | set(
 
 
 def digits(text: str) -> str:
+    text = "".join(c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) not in {"Cf", "Cs"} and (unicodedata.category(c) != "Cc" or c in "\n\r\t"))
     return "".join(str(unicodedata.digit(c)) if c.isdecimal() else c for c in text)
 
 
 def concepts(text: str, *, hinglish: bool = True) -> str:
-    text = unicodedata.normalize("NFKC", text).replace("’", "'")
+    text = digits(text).replace("’", "'")
     text = "".join(str(unicodedata.digit(c)) if c.isdecimal() else c for c in text)
     terms = TERMS | (HINGLISH if hinglish else {})
     pattern = (

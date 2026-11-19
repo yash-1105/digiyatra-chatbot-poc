@@ -55,7 +55,7 @@ def create_app(
     llm: SarvamChatClient | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging()
+    configure_logging(settings)
     problems = settings.production_problems()
     if problems:
         raise RuntimeError("Refusing to start with insecure production configuration: " + "; ".join(problems))

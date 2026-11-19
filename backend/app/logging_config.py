@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 _PATTERNS = [
     (re.compile(r"(?i)(api[-_ ]?subscription[-_ ]?key|authorization|bearer|sarvam_api_key)(\W+)\S+"), r"\1\2[REDACTED]"),
@@ -18,27 +18,41 @@ _PATTERNS = [
 class RedactingFilter(logging.Filter):
     def __init__(self) -> None:
         super().__init__()
-        self._secret: str | None = None
+        self._secrets: tuple[str, ...] = ()
 
     def set_secret(self, value: str | None) -> None:
-        self._secret = value if value and len(value) >= 8 else None
+        self.set_secrets([value])
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        if self._secret and self._secret in msg:
-            msg = msg.replace(self._secret, "[REDACTED]")
+    def set_secrets(self, values) -> None:
+        self._secrets = tuple(value for value in values if value and len(value) >= 8)
+
+    def redact(self, msg: str) -> str:
+        for secret in self._secrets:
+            msg = msg.replace(secret, "[REDACTED]")
         for pat, repl in _PATTERNS:
             msg = pat.sub(repl, msg)
-        record.msg, record.args = msg, ()
+        return msg
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg, record.args = self.redact(record.getMessage()), ()
+        if record.exc_info:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+            record.exc_info = None
+        if record.exc_text:
+            record.exc_text = self.redact(record.exc_text)
+        if record.stack_info:
+            record.stack_info = self.redact(record.stack_info)
         return True
 
 
 _filter = RedactingFilter()
 
 
-def configure_logging() -> None:
-    settings = get_settings()
-    _filter.set_secret(settings.sarvam_api_key.get_secret_value() if settings.sarvam_api_key else None)
+def configure_logging(settings: Settings | None = None) -> None:
+    settings = settings or get_settings()
+    _filter.set_secrets([value.get_secret_value() for value in
+                        (settings.sarvam_api_key, settings.anthropic_api_key, settings.proxy_shared_secret) if value]
+                       + [settings.database_url])
     root = logging.getLogger()
     if not any(isinstance(h, logging.StreamHandler) and getattr(h, "_dy", False) for h in root.handlers):
         handler = logging.StreamHandler()

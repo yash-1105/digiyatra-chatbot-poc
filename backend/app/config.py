@@ -128,6 +128,8 @@ class Settings(BaseSettings):
         if self.environment != "production":
             return []
         problems = []
+        if self.log_chat_content:
+            problems.append("LOG_CHAT_CONTENT must be false in production")
         if self.cookie_secure is False:
             problems.append("COOKIE_SECURE must not be false in production")
         if "*" in self.cors_origins:

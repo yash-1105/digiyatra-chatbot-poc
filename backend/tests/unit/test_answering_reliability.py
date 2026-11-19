@@ -103,7 +103,7 @@ def test_live_evaluation_is_authenticated_bounded_and_never_writes_analytics(app
             assert db.scalar(select(func.count()).select_from(InteractionEvent)) == 0
             assert db.scalar(select(func.count()).select_from(AIUsage)) == 0
         assert c.app.state.chat_service.d.conversations.history('eval-isolated') is None
-        assert c.app.state.evaluation_conversations.history('eval-isolated')
+        assert len(c.app.state.evaluation_conversations._data) == 1
         for wrong_body, headers in [(body, signed(body, 1)), (body+b' ', signed(body)), (body, {'content-type': 'application/json', 'x-dy-evaluation': 'invalid'})]:
             assert c.post('/api/v1/chat', content=wrong_body, headers=headers).status_code == 403
         # An unsigned eval-looking name has no privileges and records normal analytics.

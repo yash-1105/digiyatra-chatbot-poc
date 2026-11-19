@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 # --------------------------------------------------------------------- input
 _INJECTION_PATTERNS = [
@@ -30,11 +31,12 @@ _INJECTION_PATTERNS = [
 _INJECTION = [re.compile(p, re.I | re.S) for p in _INJECTION_PATTERNS]
 
 _PII_PATTERNS: dict[str, re.Pattern] = {
-    "aadhaar": re.compile(r"(?<!\d)[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}(?!\d)"),
-    "otp": re.compile(r"(?i)\b(otp|one[\s-]?time[\s-]?password|verification code|code)\b\W{0,5}(is|:|=)?\W{0,5}\d{4,8}\b"),
+    "aadhaar": re.compile(r"(?<!\d)[2-9]\d{3}[\s._-]?\d{4}[\s._-]?\d{4}(?!\d)"),
+    "otp": re.compile(r"(?i)(?<!\w)(otp|one[\s-]?time[\s-]?password|verification code|code|ओटीपी)(?=\W|\d)\W{0,5}(is|:|=)?\W{0,5}\d{4,8}(?!\d)"),
     "passport": re.compile(r"(?i)\bpassport\b.{0,25}\b[A-Z]\d{7}\b|\b[A-PR-WY][1-9]\d{5}[1-9]\b"),
     "phone": re.compile(r"(?<![\w.])(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?![\w.])"),
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    "password": re.compile(r"(?i)(?<!\w)(password|passcode|पासवर्ड|पासकोड)\s*(?:is\s+|[:=]\s*)[^\s]{4,128}"),
     "pnr": re.compile(r"(?i)\bpnr\b\W{0,8}(?:no\.?|number|is|:)?\W{0,4}[A-Z0-9]{6}\b"),
 }
 _PII_LABEL = {
@@ -44,6 +46,7 @@ _PII_LABEL = {
     "phone": "a phone number",
     "email": "an email address",
     "pnr": "a PNR",
+    "password": "a password or passcode",
 }
 _SENSITIVE_UPLOAD = re.compile(
     r"(?i)\b(here is|attached|sending|sharing|uploaded?)\b.{0,30}\b(aadhaar|passport|boarding pass|otp)\b"
@@ -123,7 +126,7 @@ def pii_notice(pii_types: list[str]) -> str:
     what = ", ".join(labels)
     return (
         f"For your safety, your message appeared to contain {what}, which was removed before processing. "
-        "Please never share OTPs, Aadhaar numbers, passport details or boarding passes in this chat."
+        "Please never share OTPs, Aadhaar numbers, passport details, passwords or boarding passes in this chat."
     )
 
 
@@ -171,7 +174,16 @@ def filter_urls(text: str, allowed: set[str], allowed_prefixes: tuple[str, ...])
         nonlocal removed
         url = m.group(0).rstrip(".,;:")
         tail = m.group(0)[len(url):]
-        if url in allowed or url.startswith(allowed_prefixes):
+        try:
+            target = urlsplit(url)
+            official = any(
+                target.scheme == p.scheme and target.hostname == p.hostname
+                and target.port in (None, 443) and not target.username and not target.password
+                for p in map(urlsplit, allowed_prefixes)
+            )
+        except ValueError:
+            official = False
+        if url in allowed or official:
             return m.group(0)
         removed += 1
         return "[link removed]" + tail

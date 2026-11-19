@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import rate_limited
 from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse, FeedbackRequest
+from app.security.anonymous import conversation_scope
 from app.security.evaluation import synthetic_request
 from app.security.rate_limit import client_key
 from app.services.chat_service import ChatService
@@ -28,10 +29,14 @@ async def chat(body: ChatRequest, request: Request, response: Response) -> ChatR
         if not allowed:
             raise HTTPException(429, detail={"code": "rate_limited", "message": "Please wait before using this provider again."}, headers={"Retry-After": str(wait)})
     service = st.chat_service
+    public_id = body.conversation_id
     if await synthetic_request(request, body.conversation_id):
         service = ChatService(replace(service.d, analytics=None, usage=None, conversations=st.evaluation_conversations))
         response.headers["x-dy-evaluation"] = "synthetic"
-    return await service.handle(body)
+    scoped_id = conversation_scope(request, body.conversation_id, response)
+    body = body.model_copy(update={"conversation_id": scoped_id})
+    result = await service.handle(body)
+    return result.model_copy(update={"conversation_id": public_id})
 
 
 @router.post("/feedback", status_code=204, responses=_ERRORS, dependencies=[Depends(rate_limited)])
@@ -41,8 +46,11 @@ async def feedback(body: FeedbackRequest, request: Request) -> Response:
     analytics = request.app.state.analytics
     if analytics is None:
         raise HTTPException(503, detail={"code": "database_unavailable", "message": "Feedback is temporarily unavailable."})
+    scoped_id = conversation_scope(request, body.conversation_id)
+    if scoped_id is None:
+        raise HTTPException(404, detail={"code": "unknown_message", "message": "This answer can no longer receive feedback."})
     outcome = await run_in_threadpool(
-        analytics.record_feedback, conversation_id=body.conversation_id, message_id=body.message_id, resolved=body.resolved
+        analytics.record_feedback, conversation_id=scoped_id, message_id=body.message_id, resolved=body.resolved
     )
     if outcome.reason == "unknown_message":
         raise HTTPException(404, detail={"code": "unknown_message", "message": "This answer can no longer receive feedback."})

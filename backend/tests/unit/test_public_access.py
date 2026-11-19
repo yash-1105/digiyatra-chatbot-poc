@@ -2,9 +2,11 @@
 
 
 def production_client(app_factory):
-    return app_factory(environment="production", cors_origins=[],
+    client = app_factory(environment="production", cors_origins=[],
                        admin_allowed_origins=["https://digiyatra-chatbot-poc.vercel.app"],
                        allow_sqlite_in_production=True)
+    client.base_url = "https://testserver"  # production cookies must travel over HTTPS
+    return client
 
 
 def test_public_chat_followup_and_feedback_need_no_login(app_factory):
