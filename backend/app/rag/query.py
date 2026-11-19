@@ -164,5 +164,5 @@ def evidence_tokens(text: str) -> set[str]:
     # FAQ questions are not evidence for their own premises; only the answer is authoritative.
     text = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", text, flags=re.S)
     text = concepts(text)
-    unknown = {w for w in re.findall(r"[\u0900-\u097f]+", text) if w not in HINDI_STOP}
+    unknown = {w for w in re.findall(r"[\u0900-\u0963\u0971-\u097f]+", text) if w not in HINDI_STOP}
     return {_ALIASES.get(t, t) for t in tokenize(text)} | unknown

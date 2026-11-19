@@ -210,37 +210,66 @@ def test_input_budget_stops_upstream_call(app_factory, fake_sarvam):
 
 def test_explicit_new_intent_does_not_inherit_old_pdf_topic(app_factory, fake_sarvam):
     with app_factory(fake_sarvam) as c:
-        ask(c, 'How do I upload a boarding pass PDF?')
-        ask(c, 'And what about Android?')
+        ask(c, "How do I upload a boarding pass PDF?")
+        ask(c, "And what about Android?")
     files = FakeSarvam.evidence_files(fake_sarvam.requests[-1])
-    assert 'registration_details.md' in files and 'share_data_with_app.md' not in files
+    assert "registration_details.md" in files and "share_data_with_app.md" not in files
 
 
 def test_rolling_summary_contains_only_known_topic_anchors():
     from app.services.conversation import ConversationStore
+
     store = ConversationStore(max_turns=2)
-    store.append('test-conversation', 'How do I register for Digi Yatra?', 'Untrusted arbitrary assistant claim')
-    store.append('test-conversation', 'What is an OTP?', 'Definition')
-    summary = store.summary('test-conversation')
-    assert 'aadhaar' in summary and 'Untrusted' not in summary
+    store.append("test-conversation", "How do I register for Digi Yatra?", "Untrusted arbitrary assistant claim")
+    store.append("test-conversation", "What is an OTP?", "Definition")
+    summary = store.summary("test-conversation")
+    assert "aadhaar" in summary and "Untrusted" not in summary
 
 
 def test_credit_exhaustion_is_safe_unavailability_without_switching(app_factory, fake_sarvam):
     def handler(request):
-        return httpx.Response(400, json={'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the API.'}})
+        return httpx.Response(
+            400,
+            json={
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "Your credit balance is too low to access the API.",
+                }
+            },
+        )
+
     with app_factory(fake_sarvam) as c:
-        c.app.state.providers['anthropic'] = AnthropicChatClient('fake', transport=httpx.MockTransport(handler))
-        r = ask(c, 'What is an OTP?', provider='anthropic')
-        assert r.status_code == 503 and 'credit balance' not in r.text and not fake_sarvam.requests
+        c.app.state.providers["anthropic"] = AnthropicChatClient("fake", transport=httpx.MockTransport(handler))
+        r = ask(c, "What is an OTP?", provider="anthropic")
+        assert r.status_code == 503 and "credit balance" not in r.text and not fake_sarvam.requests
 
 
 def test_hindi_storage_paraphrase_keeps_meaningful_unknowns_and_citations():
-    r = ground_answer('आपका डेटा आपके स्मार्टफ़ोन पर स्थानीय रूप से संग्रहित होता है [1]।', {1:0},
-                      ['Your data is stored locally on your smartphone.'])
+    r = ground_answer(
+        "आपका डेटा आपके स्मार्टफ़ोन पर स्थानीय रूप से संग्रहित होता है [1]।",
+        {1: 0},
+        ["Your data is stored locally on your smartphone."],
+    )
     assert r.dropped == 0 and r.cited_hits == [0]
 
 
 def test_hindi_platform_availability_keeps_direct_answer():
-    r = ground_answer('डिजी यात्रा Android और iOS दोनों पर उपलब्ध है [1]।', {1:0},
-                      ['Digi Yatra is available on Android and iOS.'])
+    r = ground_answer(
+        "डिजी यात्रा Android और iOS दोनों पर उपलब्ध है [1]।", {1: 0}, ["Digi Yatra is available on Android and iOS."]
+    )
+    assert r.dropped == 0
+
+
+def test_devanagari_punctuation_is_not_a_word_or_a_word_boundary_blocker():
+    assert "।" not in evidence_tokens("संग्रहित है।")
+    assert "है।" not in evidence_tokens("संग्रहित है।")
+    assert evidence_tokens("स्मार्टफ़ोन।") == evidence_tokens("smartphone")
+    r = ground_answer("डेटा केवल आपके स्मार्टफ़ोन पर संग्रहित है। [1]", {1: 0}, ["Data is stored only on your smartphone."])
+    assert r.dropped == 0
+
+
+def test_hindi_central_repository_paraphrase_is_grounded_without_lower_threshold():
+    r = ground_answer(
+        "कोई केंद्रीय रिपॉजिटरी या डेटाबेस उपयोग नहीं किया जाता। [1]", {1: 0}, ["No central repository or database is used."]
+    )
     assert r.dropped == 0

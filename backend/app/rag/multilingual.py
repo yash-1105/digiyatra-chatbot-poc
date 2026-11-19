@@ -8,6 +8,25 @@ import unicodedata
 # Query synonyms and claim concepts. Unknown Devanagari words remain visible to validation.
 TERMS = {
     "डिजी यात्रा": "digi yatra",
+    "ऐप": "app",
+    "एप": "app",
+    "एप्प": "app",
+    "डेटाबेस": "database",
+    "रिपॉजिटरी": "repository",
+    "व्यक्तिगत": "personal",
+    "दस्तावेज": "documents",
+    "दस्तावेज़": "documents",
+    "इतिहास": "history",
+    "ट्रैक": "track",
+    "वेरिफायर": "verifier",
+    "नोड": "node",
+    "प्रतिधारण": "retention",
+    "अवधि": "period",
+    "सीमित": "limited",
+    "रखा": "stored",
+    "रखी": "stored",
+    "कोई": "any",
+    "सारी": "all",
     "डिजीयात्रा": "digi yatra",
     "डिजि यात्रा": "digi yatra",
     "बोर्डिंग पास": "boarding pass",
@@ -303,13 +322,13 @@ HINGLISH = {
     "abhi": "right now",
     "chal rahe": "working",
 }
-HINDI_STOP = set(
+HINDI_STOP = {"करता"} | set(
     "है हैं था थी थे हो होता होती होते होगा होगी होंगे करना करते करती कर करें किया कीजिए करके होने होना होने लिए से में पर और या तो को का की के एक यह उस इस तक कुछ तरह बारे साथ बाद पहले फिर यदि लेकिन सकते सकता सकती चाहिए क्या कैसे कहाँ कहां कौन सा सी से ही भी अब अपने अपनी अपना इस्तेमाल उपयोग द्वारा माध्यम रूप जैसे जाएगा जाएगी जाते जाती सकते वाला वाली वहां वहाँ वहां मिल जाता जाती जाएं जाएँ ऐसा ऐसे अच्छी पूरी तौर अनुसार बताएं बताइए कृपया कृप्या जब तब तथा तक अधिक कई बार दूसरे अन्य इसलिए इन उन हुए हुआ हुई गए गई जाए रहेगा रहती रहतीं कोड दिए दी दिया देना देती देता दें".split()
 )
 
 
 def digits(text: str) -> str:
-    return ''.join(str(unicodedata.digit(c)) if c.isdecimal() else c for c in text)
+    return "".join(str(unicodedata.digit(c)) if c.isdecimal() else c for c in text)
 
 
 def concepts(text: str, *, hinglish: bool = True) -> str:
@@ -317,9 +336,9 @@ def concepts(text: str, *, hinglish: bool = True) -> str:
     text = "".join(str(unicodedata.digit(c)) if c.isdecimal() else c for c in text)
     terms = TERMS | (HINGLISH if hinglish else {})
     pattern = (
-        r"(?<![\w\u0900-\u097f])("
+        r"(?<![\w\u0900-\u0963\u0971-\u097f])("
         + "|".join(re.escape(k) for k in sorted(terms, key=len, reverse=True))
-        + r")(?![\w\u0900-\u097f])"
+        + r")(?![\w\u0900-\u0963\u0971-\u097f])"
     )
     return re.sub(pattern, lambda m: terms[m.group(0).lower()], text, flags=re.I)
 
