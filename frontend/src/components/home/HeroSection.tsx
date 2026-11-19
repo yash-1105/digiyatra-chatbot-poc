@@ -30,7 +30,7 @@ export function HeroSection() {
       <section aria-label="Featured information" className="foundation-hero">
         <div aria-hidden="true" className="hero-light-trail"><i /><i /><i /></div>
         <div className="hero-content">
-          <h1>Welcome to Digi Yatra.<br /><span>Your journey, made simpler.</span></h1>
+          <h1><span className="hero-title-line">Welcome to <span className="hero-title-brand">Digi Yatra.</span></span><span className="hero-title-line hero-title-second">Your journey, made simpler.</span></h1>
           <p className="hero-intro">Explore paperless airport travel.<br className="hidden sm:block" /> Get the information you need, before you fly.</p>
           <div className="hero-actions">
             <Link href="/#registration" className="btn-pill inline-flex items-center gap-3 rounded-full px-7 py-3.5">Get started <ArrowUpRight aria-hidden="true" className="h-5 w-5" /></Link>

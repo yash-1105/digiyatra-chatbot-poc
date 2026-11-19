@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlaskConical, MessageSquareText, Trash2, X } from "lucide-react";
+import { FlaskConical, Trash2, X } from "lucide-react";
 import { LogoMark } from "@/components/brand/LogoMark";
 import { starterQuestions } from "@/content/starter-questions";
 import { MOCK_ERROR_TRIGGER } from "@/lib/api";
@@ -254,13 +254,14 @@ function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
         aria-label={phase === "open" ? t.closeLauncher : t.open}
         className={cn(
           "chat-launcher group fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-navy text-white shadow-float ring-4 ring-white transition-transform hover:scale-105 sm:bottom-6 sm:right-6 [html[data-contrast=high]_&]:ring-[#ffff00]",
-          phase !== "closed" && "max-sm:hidden",
+          phase === "closed" ? "chat-launcher-inviting" : "max-sm:hidden",
         )}
       >
         {phase === "open" ? <X aria-hidden="true" className="h-7 w-7" /> : <LogoMark className="launcher-brand" title="" />}
         {phase === "closed" ? (
-          <span className="pointer-events-none absolute right-[4.5rem] hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 py-1.5 text-sm font-medium text-brand shadow-card group-hover:flex group-focus-visible:flex">
-            <MessageSquareText aria-hidden="true" className="h-4 w-4" /> {t.ask}
+          <span className="launcher-callout" aria-hidden="true">
+            <span>{locale === "hi" ? "मदद के लिए चैट करें" : "Chat for assistance"}</span>
+            <strong>{locale === "hi" ? "डिजी यात्रा सहायक" : "Digi Yatra Assistant"}</strong>
           </span>
         ) : null}
       </button>
