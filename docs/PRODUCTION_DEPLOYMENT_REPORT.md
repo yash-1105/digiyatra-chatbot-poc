@@ -13,8 +13,10 @@ Date: 2026-11-19 (Asia/Kolkata)
 | Backend | https://backend-production-ab8a175f.up.railway.app |
 | Public GitHub repository | https://github.com/yash-1105/digiyatra-chatbot-poc — PUBLIC |
 | Railway project | https://railway.com/project/d3e6f900-46b4-401b-a165-c5b0aba6718a |
-| Backend deployment | `c14db3df-fabe-4a77-ace4-0224f8305d8b`, SUCCESS |
-| Frontend deployment | `dpl_DfwE5JCyujiQgbcrihvByMkWCwBT`, READY |
+| Backend deployment | `f8a17f0b-70a5-425f-9860-ad3830bd5802`, SUCCESS |
+| Frontend deployment | Existing Vercel frontend retained; no frontend runtime change required |
+
+The authentication-fix sections below describe the earlier release. The latest conversational-quality deployment and its separate verification results are recorded at the end.
 
 ## Authentication fix
 
@@ -106,3 +108,64 @@ Retrieval and sentence grounding remain lexical rather than neural embeddings or
 Railway's CLI warns that legacy `railway.toml` support ends on 2026-12-01; explicit service settings and the Dockerfile-path variable are applied. A configuration migration should be scheduled before that date. Hindi answer quality, load capacity and disaster-recovery restoration were not validated during this authentication fix.
 
 Private screenshots and sanitized verification files are in `.cache/`; no administrator credentials, tokens or corpus files are published with this report.
+
+
+## Conversational quality release — 2026-11-19
+
+Implementation commits: `8e4898a` and `8fb6aa1`. Railway backend deployment: `f8a17f0b-70a5-425f-9860-ad3830bd5802` (SUCCESS). Public portal: https://digiyatra-chatbot-poc.vercel.app. Backend: https://backend-production-ab8a175f.up.railway.app.
+
+The architecture, Sarvam-105B model, credentials, PostgreSQL schema, administrator account, DGCA-inspired design and approved private corpus are preserved. The corpus still has 119 chunks from 26 documents. Railway startup continues to run migrations and automatic index initialization. No billing settings, infrastructure resources, secrets or production account passwords were changed. Only the backend required deployment; the frontend already supports line breaks, numbered instructions and clickable URLs. Its sole source change is a browser acceptance-test adjustment for the intentionally cautious current-airport-list policy and the installed browser path.
+
+Root causes, retrieval changes, explicit knowledge/general/insufficient modes, grounding protections and before/after examples are detailed in [CONVERSATION_QUALITY_REPORT.md](CONVERSATION_QUALITY_REPORT.md). The 40-question evaluation is committed under `backend/evaluation/`.
+
+### Before/after comparison
+
+The final local real-Sarvam comparison uses the same questions and scoring rules as the baseline:
+
+| Automated check | Before | Final |
+|---|---:|---:|
+| Intended answer mode | 27/40 | 40/40 |
+| Expected key concepts | 30/40 | 40/40 |
+| Relevant expected source retrieved/cited, or not applicable | 36/40 | 40/40 |
+| Citation structure and no fabricated general sources | 40/40 | 40/40 |
+| Numbered instructions where requested | 0/11 | 11/11 |
+| Concise answer, at most 220 words | 40/40 | 40/40 |
+
+These are regression indicators, not a semantic-correctness guarantee. In particular, the citation score tests marker/source structure rather than proving every fact correct. Earlier iteration runs exposed and led to fixes for unsupported NFC conclusions, irrelevant device troubleshooting, PDF instructions substituted for scan questions, and numbering gaps after claim removal.
+
+### Validation
+
+- Backend offline suite: **240 passed**; all **15 existing live Sarvam tests passed**. Ruff passes.
+- Frontend type checking, ESLint and production build pass.
+- Existing chat browser acceptance script passes. Existing admin browser acceptance script passes **27/27** checks, covering password login, cookies, dashboard analytics, navigation, feedback, filters and logout against an isolated synthetic database.
+- Existing screenshot suite captures desktop, laptop, tablet and mobile layouts; it reports a pre-existing **404 `/favicon.ico`**. No layout overflow or interaction failures were reported. The favicon was not changed as part of this backend task.
+- Live deployed-runtime and public-browser verification results follow below.
+
+All automated question/feedback evaluations use separate synthetic databases, including the deployed-container run. No synthetic question or resolution vote from this release was written to the production PostgreSQL analytics database. Full model answers, passages, local test credentials and screenshots remain private ignored artifacts.
+
+
+### Final live deployment verification
+
+The final Railway image was checked against SHA-256 hashes of all seven affected runtime modules. Forty requests were exercised through FastAPI's ASGI test client **inside that deployed container**, using the real Railway Sarvam credential and unchanged production index, but an explicitly isolated temporary synthetic database. This did not alter the running service configuration or production database. **30 responses came from real Sarvam-105B calls**; the remaining requests used the intended deterministic safety fallbacks.
+
+| Final deployed-runtime check | Result |
+|---|---:|
+| HTTP success | 40/40 |
+| Expected answer mode | 40/40 |
+| Expected concepts | 39/40 |
+| Relevant sources / not applicable | 40/40 |
+| Valid citation structure / no general citations | 40/40 |
+| Numbered procedural answers | 11/11 |
+| Concise answers | 40/40 |
+| Synthetic resolution feedback | HTTP 204 |
+| Anonymous admin analytics | HTTP 401 |
+
+The single concept-keyword miss is the boarding-pass answer's use of “share” rather than the probe's “upload/scan” wording. Manual inspection confirms that it identifies Digi Yatra in the phone's Share menu and provides four cited PDF-sharing steps. It does not indicate a refusal or missing instructions. International travel, live Delhi gate status, unsupported NFC requirements and account-access requests remain cautious fallbacks; basic technology definitions have no fabricated KB citations.
+
+Public URL checks through Vercel and directly on Railway confirm healthy APIs with 119 indexed chunks, HTTP 401 for anonymous analytics, and HTTP 404 for private corpus paths, `/.env` and the production OpenAPI schema. Homepage and administrator login load without an HTTP Basic challenge; anonymous dashboard access redirects to login.
+
+Fresh desktop and mobile browser contexts loaded the real Vercel website and rendered the final deployed-container responses using browser request interception: **20/20 checks passed**, including numbered instructions, source expansion, general-knowledge labelling without fake sources, unofficial-site disclosure, admin redirects and page-width checks. This is a rendering/integration check, **not a claim that 30 public HTTP chatbot requests traversed Vercel**. The public proxy was checked separately through health and security endpoints. This separation keeps synthetic questions and feedback out of primary production analytics.
+
+Live administrator preservation checks: **7/7 passed**, including unchanged Argon2id hash, accepted authenticated session, protected analytics, rejected missing/wrong CSRF and cross-origin logout, authenticated dashboard rendering, normal browser logout and rejected replay of the revoked session. The short-lived verification session was revoked through normal logout. The production password was not obtained or reset; actual password-login behavior was exercised in the isolated browser acceptance test instead.
+
+No Vercel redeploy was necessary because no frontend runtime code changed. No Railway billing settings, credentials, production data, knowledge approval rules or unrelated infrastructure were changed. Remaining operational issues are the existing missing favicon and the previously documented Railway legacy-configuration migration deadline. Generative language and lexical validation remain imperfect; the evaluation is a bounded regression sample, not a guarantee for every possible passenger question.
