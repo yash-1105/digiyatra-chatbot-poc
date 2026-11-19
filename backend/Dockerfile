@@ -29,7 +29,7 @@ COPY knowledge/deploy /app/knowledge/deploy
 # to skip the ~seconds rebuild on restart, or leave it ephemeral (ensure-index rebuilds deterministically).
 RUN useradd --system --uid 10001 --home /app app \
     && mkdir -p /data/lancedb \
-    && chown -R app:app /data \
+    && chown -R app:app /app /data \
     && chmod +x ./scripts/start.sh
 USER app
 

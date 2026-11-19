@@ -1,11 +1,20 @@
 # Build context = repository root. Allow-list: only what backend/Dockerfile copies.
 *
+!railway.toml
+!backend/
+backend/*
+!backend/Dockerfile
 !backend/requirements.lock
 !backend/alembic.ini
 !backend/migrations/
 !backend/ingestion/
 !backend/app/
 !backend/scripts/start.sh
+!backend/scripts/
+backend/scripts/*
+!backend/scripts/start.sh
+!knowledge/
+knowledge/*
 !knowledge/deploy/
 # Never, even if re-included above:
 **/__pycache__
