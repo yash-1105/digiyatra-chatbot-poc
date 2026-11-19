@@ -43,6 +43,8 @@ def checks(case, response):
         if case["mode"] == "knowledge"
         else not sources,
         steps=not case.get("steps") or len(re.findall(r"(?m)^\s*\d+[.)]\s", answer)) >= case.get("min_steps", 2),
+        snapshot=not case.get("snapshot") or bool(re.search(r"undated|snapshot|स्नैपशॉट", answer, re.I)),
+        airport_entries=not case.get("airport_count") or len(re.findall(r"\([A-Z]{3}\)", answer)) == case["airport_count"],
         relevant=not case.get("sources") or bool({s["source_file"] for s in sources} & set(case["sources"])),
     )
 
@@ -52,6 +54,8 @@ def main():
     parser.add_argument("--label", required=True)
     parser.add_argument("--baseline-prompt", type=Path)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--questions", type=Path, default=Path(__file__).with_name("bilingual_questions.json"))
+    parser.add_argument("--providers", nargs="+", choices=("sarvam", "anthropic"), default=["sarvam", "anthropic"])
     args = parser.parse_args()
     cli = shutil.which("railway")
     if not cli:
@@ -64,7 +68,7 @@ def main():
         check=True,
     )
     variables = json.loads(p.stdout)
-    cases = json.loads(Path(__file__).with_name("bilingual_questions.json").read_text())
+    cases = json.loads(args.questions.read_text())
     if args.limit:
         cases = cases[: args.limit]
     folder = PROJECT_DIR / ".cache" / "bilingual-eval"
@@ -98,7 +102,7 @@ def main():
     prompt = args.baseline_prompt.read_text() if args.baseline_prompt else chat_service.SYSTEM_PROMPT
     rows = []
     with patch.object(chat_service, "SYSTEM_PROMPT", prompt), TestClient(create_app(settings)) as client:
-        for provider in ("sarvam", "anthropic"):
+        for provider in args.providers:
             for case in cases:
                 with client.app.state.db.session() as db:
                     previous = set(db.scalars(select(AIUsage.id)))
@@ -143,7 +147,9 @@ def main():
                 output.write_text(json.dumps(rows, indent=2, ensure_ascii=False) + "\n")
                 output.chmod(0o600)
                 print(json.dumps({k: row[k] for k in ("id", "provider", "http_status", "checks")}), flush=True)
-    for provider in ("sarvam", "anthropic"):
+                if r.status_code in {502, 503} and provider == "anthropic":
+                    break  # one real availability probe; never switch providers or repeatedly charge failures
+    for provider in args.providers:
         group = [r for r in rows if r["provider"] == provider]
         calls = [u for r in group for u in r["usage"]]
         print(

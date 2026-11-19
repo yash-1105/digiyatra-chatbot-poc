@@ -124,6 +124,19 @@ def _polarity_ok(sentence: str, evidence: str) -> bool:
     anchors = evidence_tokens("NFC OTP QR Android iOS iPhone DigiLocker Aadhaar PDF JPEG PNG lounge payment")
     if (evidence_tokens(claim) & anchors) - evidence_tokens(answer):
         return False
+    # Validate a catalog entry against its own approved code/name pair. Sharing
+    # generic words such as "International Airport" cannot establish a new entry.
+    catalog_source = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", evidence, flags=re.S)
+    catalog = dict(re.findall(r"(?m)^\d+\.\s*\(([A-Z]{3})\)\s*([^\n]+)", catalog_source))
+    code = re.search(r"\(([A-Z]{3})\)", sentence)
+    if catalog and code:
+        name = re.sub(r"\([A-Z]{3}\)|\[\d+\]", "", sentence).strip(" .।:-")
+        if code[1] not in catalog or not evidence_tokens(name) <= evidence_tokens(catalog[code[1]]):
+            return False
+    if catalog and not code:
+        names = re.findall(r"(?:[A-Z][A-Za-z’'.-]*\s+){1,12}Airport", sentence)
+        if any(not any(evidence_tokens(name) <= evidence_tokens(entry) for entry in catalog.values()) for name in names):
+            return False
     if "aadhaar" in claim:
         required = bool(re.search(r"\b(mandatory|required|necessary)\b", answer))
         denied = bool(re.search(r"\bnot (?:mandatory|required|necessary)\b|\b(?:mandatory|required|necessary) not\b", claim))

@@ -118,7 +118,6 @@ def test_general_mode_rejects_policy_citations_urls_actions(app_factory, output)
     "question",
     [
         "Can I use Digi Yatra for international travel?",
-        "Which airports support Digi Yatra?",
         "Can you check my boarding pass upload?",
         "Can I pay for airport lounge entry through Digi Yatra?",
         "Can I bypass Aadhaar verification?",

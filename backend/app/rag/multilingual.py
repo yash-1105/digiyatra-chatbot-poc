@@ -8,6 +8,15 @@ import unicodedata
 # Query synonyms and claim concepts. Unknown Devanagari words remain visible to validation.
 TERMS = {
     "डिजी यात्रा": "digi yatra",
+    "नीति": "policy", "ढाँचे": "framework", "ढांचे": "framework", "ढाँचा": "framework", "ढांचा": "framework",
+    "पहल": "initiative", "उद्योग": "industry", "नेतृत्व": "led", "अंतर्गत": "under", "गठित": "incorporated", "निगमित": "incorporated", "पंजीकृत": "registered", "अधिनियम": "act", "मंत्रालय": "ministry",
+    "सरकारी": "government", "सरकार": "government", "विभाग": "department",
+    "संगठन": "organization", "संस्था": "organization", "कंपनी": "company",
+    "फाउंडेशन": "foundation", "संचालित": "operated", "चलाता": "operates", "चलाती": "operates",
+    "गैर-लाभकारी": "not-for-profit", "गैर लाभकारी": "not-for-profit", "लाभरहित": "not-for-profit",
+    "धारा": "section", "कंपनी अधिनियम": "companies act", "नागरिक उड्डयन मंत्रालय": "ministry of civil aviation",
+    "उद्योग-नेतृत्व": "industry-led", "किस": "which", "किन": "which", "समर्थित": "supported",
+    "रखता": "retain", "कितने समय": "how long", "कितनी देर": "how long", "घंटे": "hours", "प्रस्थान": "departure",
     "ऐप": "app",
     "एप": "app",
     "एप्प": "app",
@@ -283,6 +292,9 @@ TERMS = {
     "पिछले": "previous",
 }
 HINGLISH = {
+    "sarkari": "government", "sarkar": "government", "kaun chalata": "who operates",
+    "kaun": "which", "chalata": "operates", "chalaata": "operates", "sanstha": "organization",
+    "kitne samay": "how long", "kitni der": "how long", "ghante": "hours",
     "digiyatra": "digi yatra",
     "aadhar": "aadhaar",
     "adhar": "aadhaar",

@@ -28,6 +28,12 @@ def normalize_query(text: str) -> str:
 
 def query_intent(text: str) -> str | None:
     q = normalize_query(text)
+    if re.search(r"\b(airport|airports|cities)\b", q) and re.search(r"\b(data|biometric|biometrics)\b", q) and re.search(r"\b(retain\w*|retention|stored|storage|purge|delete|long|hours?)\b", q):
+        return "airport_retention"
+    if re.search(r"\b(airport|airports|cities)\b", q) and re.search(r"\b(which|list|support\w*|available|availability|where|upcoming|planned|future)\b", q):
+        return "airport_planned" if re.search(r"\b(upcoming|planned|future)\b", q) else "airport_catalog"
+    if re.search(r"\b(government|govt|organization|organisation|operat\w*|runs?|owns?|ownership|company|foundation|ministry|moca|industry)\b", q) and re.search(r"\b(digi yatra|foundation|app|application|initiative|it|this)\b", q):
+        return "organization"
     if re.search(r"\b(manual|normally|regular|alternative)\b", q) and re.search(
         r"\b(down|fail\w*|not work|doesn.t work|instead)\b", q
     ):
@@ -61,6 +67,10 @@ def query_intent(text: str) -> str | None:
 
 
 INTENT_TERMS = {
+    "organization": "operator operated foundation not for profit company section 8 industry led ministry civil aviation framework",
+    "airport_catalog": "which airports currently support available supported airports documented list",
+    "airport_planned": "which airports planned future upcoming implementation",
+    "airport_retention": "how long biometric data stored airport verifier node retention purge hours flight departure",
     "manual_alternative": "system down regular manual processes alternative identity verification boarding",
     "aadhaar_requirement": "without aadhaar mandatory verification registration",
     "child_without_aadhaar": "child infant without aadhaar manual guardian",
@@ -78,6 +88,20 @@ INTENT_TERMS = {
 def intent_match(intent: str | None, chunk: dict) -> float:
     """Promotion requires anchors in the approved chunk itself, not just its filename."""
     text = normalize_query(chunk["text"])
+    if intent == "organization":
+        if "not-for-profit" in text and "section 8" in text:
+            return 1.1 if "ministry of civil aviation" in text else (1.05 if "who operates" in text else 1.0)
+        return 0.7 if "ministry of civil aviation" in text and "digi yatra" in text else 0.0
+    if intent == "airport_catalog":
+        if re.search(r"(?m)^\d+\.\s*\([A-Z]{3}\)", chunk["text"]):
+            return 1.0 if "currently support" in text and "planned" not in text else 0.0
+        return 0.65 if "currently support" in text and "planned" not in text else 0.0
+    if intent == "airport_planned":
+        return float("planned" in text and "airports" in text)
+    if intent == "airport_retention":
+        if "airport" in text and ("purge" in text or "purged" in text) and re.search(r"\b\d+\s*hours?\b", text) and "departure" in text:
+            return 1.0
+        return 0.65 if "airport" in text and "retention" in text and "biometric" in text else 0.0
     if intent == "manual_alternative":
         return float(all(w in text for w in ("system", "down", "regular manual", "alternative")))
     if intent == "aadhaar_requirement":

@@ -8,7 +8,7 @@ import json
 import math
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.rag.embeddings import Embedder, features, tokenize
 from app.rag.query import INTENT_TERMS, intent_match, normalize_query, query_intent
@@ -163,6 +163,10 @@ class Retriever:
     def reload(self) -> None:
         self._chunks = self.index.all_chunks(approved_only=True)
         self._by_id = {c["chunk_id"]: c for c in self._chunks}
+        self._faq_groups: dict[tuple, list[dict]] = {}
+        for c in self._chunks:
+            if c.get("question"):
+                self._faq_groups.setdefault((c["source_file"], c["section"], c["question"]), []).append(c)
         self.corpus_revision = hashlib.sha256(json.dumps(self._chunks, sort_keys=True, default=str).encode()).hexdigest()
         # URLs and file paths otherwise drown out the short FAQ / store-listing text.
         self._tokens = [tokenize(normalize_query(re.sub(r"https?://\S+", " ", c["embed_text"]))) for c in self._chunks]
@@ -238,10 +242,32 @@ class Retriever:
                                    r.keyword_score, r.vector_score, r.chunk_id), reverse=True)
 
         # Platform/download questions need store evidence, not nearby device-error FAQs.
-        if intent in {"app_download", "boarding_upload", "boarding_pdf", "boarding_scan"}:
+        if intent in {"app_download", "boarding_upload", "boarding_pdf", "boarding_scan", "airport_catalog", "airport_planned"}:
             direct = [r for r in scored if intent_match(intent, {"text": r.text}) >= (0.8 if intent == "boarding_scan" else 0.9)]
             if direct:
                 scored = direct
+
+        # Reassemble approved parts of the SAME FAQ before caps/budgets. A short
+        # count/link fragment must not displace its actual list or procedure.
+        assembled, seen_groups = [], set()
+        for hit in scored:
+            key = (hit.source_file, hit.section, hit.question)
+            if hit.question and key in seen_groups:
+                continue
+            seen_groups.add(key)
+            parts = self._faq_groups.get(key, [])
+            if len(parts) > 1:
+                bodies = list(dict.fromkeys(re.sub(r"^Q:.*?\nA:\s*", "", p["text"], flags=re.S) for p in parts))
+                dates = {p.get("as_of") for p in parts}
+                hit = replace(hit, text=f"Q: {hit.question}\nA: " + "\n\n".join(bodies),
+                    time_sensitive=any(p.get("time_sensitive") for p in parts),
+                    as_of=next(iter(dates)) if len(dates) == 1 else None,
+                    verification_status="unverified" if any(p.get("verification_status") == "unverified" for p in parts) else hit.verification_status,
+                    conflict_ids=list(dict.fromkeys(cid for p in parts for cid in p.get("conflict_ids", []))),
+                    urls=list(dict.fromkeys(url for p in parts for url in p.get("urls", []))),
+                    extra={"source_chunks": [p["chunk_id"] for p in parts]})
+            assembled.append(hit)
+        scored = assembled
 
         # 3) threshold, duplicate suppression, per-source cap
         selected: list[RetrievedChunk] = []
@@ -261,3 +287,11 @@ class Retriever:
             if len(selected) >= top_k:
                 break
         return selected
+
+    def retry_search(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
+        """Second lexical/FAQ phrasing pass, with identical approval and score filters."""
+        intent = query_intent(query)
+        alternate = INTENT_TERMS.get(intent, expand_query(query))
+        hits = self.search(alternate, max(top_k, 10))
+        hits.sort(key=lambda h: (bool(h.question), intent_match(intent, {"text": h.text}), h.score), reverse=True)
+        return hits[:top_k]

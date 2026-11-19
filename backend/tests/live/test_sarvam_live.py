@@ -101,8 +101,9 @@ def test_injection_refused(client):
     assert body["status"] == "refused"
 
 
-def test_current_airport_list_requires_verification(client):
+def test_documented_airport_list_is_qualified(client):
     body = ask(client, "Which airports support Digi Yatra?", "live-airports-0001")
-    assert body["answer_mode"] == "insufficient"
-    assert body["sources"] == []
-    assert "official" in body["answer"].lower()
+    assert body["answer_mode"] == "knowledge"
+    assert any(s["source_file"] == "available_airports.md" for s in body["sources"])
+    assert "undated" in body["answer"].lower()
+    assert len(re.findall(r"\([A-Z]{3}\)", body["answer"])) == 24

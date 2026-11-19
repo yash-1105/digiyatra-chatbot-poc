@@ -102,11 +102,12 @@ def test_conflicting_sources_are_flagged_to_the_model(app_factory, fake_sarvam):
     assert "CONFLICT GROUP C1" in user_turn and "Conflict note (internal" in user_turn
 
 
-def test_current_airports_require_verification_without_model_guessing(app_factory, fake_sarvam):
+def test_documented_airports_are_answerable_without_claiming_live_verification(app_factory, fake_sarvam):
     body = ask(app_factory(fake_sarvam), "Which airports currently support Digi Yatra?").json()
-    assert body["answer_mode"] == "insufficient" and body["sources"] == []
-    assert "official airport list" in body["answer"]
-    assert fake_sarvam.requests == []
+    assert body["answer_mode"] == "knowledge" and body["sources"]
+    assert "undated" in body["answer"] and "not live" in body["answer"]
+    assert "digi-yatra-implementation-current/" in body["answer"]
+    assert len(fake_sarvam.requests) == 1
 
 
 # ------------------------------------------------------------------ guardrails

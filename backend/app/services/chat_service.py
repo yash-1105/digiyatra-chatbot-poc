@@ -20,7 +20,7 @@ from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, check_output, pii_notice
 from app.services.analytics import AnalyticsService
-from app.services.answering import general_system_prompt, general_topic, restricted_request
+from app.services.answering import general_system_prompt, general_topic, restricted_request, snapshot_note
 from app.services.context import FAQCache, faq_key, limited_history, select_context
 from app.services.conversation import ConversationStore, Turn
 from app.services.localization import fallback, notice
@@ -277,12 +277,23 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001 - analytics must never break the chatbot
             log.error("analytics record_failed error=%s", type(exc).__name__)
 
-    async def _handle(self, req: ChatRequest) -> ChatResponse:
+    async def _handle(self, req: ChatRequest, *, retrieval_retry: bool = False, previous_evidence: set[str] | None = None) -> ChatResponse:
         started = time.perf_counter()
         s = self.d.settings
         a = assess_input(req.message)
         notices: list[str] = [pii_notice(a.pii_types)] if a.pii_types else []
         question = a.redacted_text
+        intent = query_intent(question)
+        reason = "answered"
+        hits: list[RetrievedChunk] = []
+
+        async def insufficient(why: str, top: float = 0.0, model=None):
+            nonlocal reason
+            reason = why
+            log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=%s retry=%s", req.provider, req.locale, intent or "none", why, retrieval_retry)
+            if not retrieval_retry:
+                return await self._handle(req, retrieval_retry=True, previous_evidence={h.chunk_id for h in hits})
+            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=model), top)
 
         def done(resp: ChatResponse, top: float = 0.0) -> ChatResponse:
             log.info(
@@ -292,15 +303,20 @@ class ChatService:
             )
             if s.log_chat_content:
                 log.info("chat content q=%r a=%r", question, resp.answer)
+            log.info("chat decision provider=%s locale=%s intent=%s reason=%s retry=%s", req.provider, req.locale, intent or "none", reason, retrieval_retry)
             return resp
 
         if a.injection:
+            reason = "input_injection"
             return done(self._response(req, MSG_REFUSED, "refused", notices=notices))
         if a.greeting:
+            reason = "greeting"
             return done(self._response(req, MSG_GREETING, "greeting", notices=notices))
         if a.live_status:
+            reason = "live_operation_request"
             return done(self._response(req, MSG_LIVE, "live_status", notices=notices))
         if restriction := restricted_request(question):
+            reason = "restricted_account_or_policy_request"
             return done(self._response(req, restriction, "insufficient_evidence", notices=notices))
 
         topic = general_topic(question)
@@ -310,6 +326,7 @@ class ChatService:
             definition_hits = self.d.retriever.search(question, s.retrieval_top_k)
             definition = re.compile(rf"(?i)\b{re.escape(topic)}\b.{{0,30}}\b(is|means|stands for|refers to)\b")
             if not any(definition.search(re.sub(r"^Q:.*?\nA:\s*", "", h.text, flags=re.S)) for h in definition_hits):
+                reason = "allowlisted_general_definition"
                 return done(await self._general_answer(req, topic, notices))
 
         history = self._history(req)
@@ -328,20 +345,28 @@ class ChatService:
                              *(INTENT_TERMS[t] for t in old_topics[-4:] if t)])
         if summary and _is_follow_up(question) and not query_intent(question):
             retrieval_query = summary + " " + retrieval_query
-        hits = self.d.retriever.search(retrieval_query, s.retrieval_top_k)
-        hits = select_context(hits, s.context_token_budget, s.context_top_k)
+        search = self.d.retriever.retry_search if retrieval_retry else self.d.retriever.search
+        candidates = search(retrieval_query, s.retrieval_top_k)
+        hits = select_context(candidates, s.context_token_budget, s.context_top_k)
+        log.info("chat retrieval provider=%s locale=%s intent=%s retry=%s candidates=%d selected=%d ids=%s scores=%s budget=%d", req.provider, req.locale, intent or "none", retrieval_retry, len(candidates), len(hits), ",".join(h.chunk_id for h in hits), ",".join(f"{h.score:.3f}" for h in hits), s.context_token_budget)
+        if retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set()):
+            reason = "retry_no_new_evidence"
+            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices))
         top = hits[0].score if hits else 0.0
         # Absence of evidence for a named requirement is not evidence that it
         # is unnecessary. In particular, general NFC definitions cannot answer
         # questions about Digi Yatra's device requirements.
         if any(not any(re.search(rf"(?i)\b{term}\b", h.text) for h in hits)
                for term in ("nfc", "lounge") if re.search(rf"(?i)\b{term}\b", question)):
-            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices), top)
+            return await insufficient("unsupported_named_subject", top)
         if not hits or (not a.domain_related and not query_intent(retrieval_query) and top < 0.35):
             status = "insufficient_evidence" if a.domain_related else "out_of_scope"
             msg = MSG_INSUFFICIENT if a.domain_related else MSG_OUT_OF_SCOPE
             if a.action_request:
                 notices.append(NOTICE_NO_ACTIONS)
+            if status == "insufficient_evidence":
+                return await insufficient("no_relevant_context", top)
+            reason = "out_of_scope"
             return done(self._response(req, msg, status, notices=notices), top)
 
         evidence = format_evidence(hits, self.d.conflict_guidance)
@@ -367,10 +392,7 @@ class ChatService:
             # let citation validation below decide whether the remaining answer is grounded.
             raw = re.sub(re.escape(INSUFFICIENT), "", raw, flags=re.I).strip()
             if len(raw) < 40:
-                return done(
-                    self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model),
-                    top,
-                )
+                return await insufficient("model_insufficient_evidence", top, result.model)
 
         secrets_list = [key.get_secret_value() for key in (s.sarvam_api_key, s.anthropic_api_key) if key]
         allowed_urls = {u for h in hits for u in h.urls}
@@ -390,7 +412,7 @@ class ChatService:
         if not checked.cited or not checked.text:
             # Ungrounded answer: never show it without verifiable citations.
             log.warning("chat ungrounded_answer_blocked")
-            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model), top)
+            return await insufficient("no_valid_citations", top, result.model)
 
         # Sentence-level grounding: every factual sentence must be supported by the evidence it cites.
         grounded = ground_answer(
@@ -401,7 +423,7 @@ class ChatService:
                      grounded.dropped, grounded.reattributed, grounded.removed_markers)
         if not grounded.cited_hits or not grounded.text:
             log.warning("chat ungrounded_after_sentence_check")
-            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model), top)
+            return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
         if procedure_requested(question) and not re.search(r"(?m)^\d+[.)]\s", checked.text):
             sentences = re.split(r"(?<=[.!?।])\s+", checked.text)
@@ -417,6 +439,10 @@ class ChatService:
         if any(c.time_sensitive for c in cited_chunks):
             notices.append(NOTICE_TIME_SENSITIVE)
 
+        qualification = snapshot_note(cited_chunks, req.locale, documented_policy=intent == "airport_retention")
+        if qualification:
+            checked.text += "\n\n" + qualification
+        reason = "documented_snapshot" if qualification else "grounded_answer"
         self.d.conversations.append(req.conversation_id, question, _strip_markers(checked.text))
         status = "insufficient_evidence" if _DECLINE.match(checked.text) else "answered"
         return done(self._response(req, checked.text, status, sources=sources, notices=notices, model=result.model), top)
