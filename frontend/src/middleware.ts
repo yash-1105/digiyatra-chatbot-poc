@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { isIP } from "node:net";
 import { ADMIN_SESSION_COOKIE, validateAdminSession } from "@/lib/admin-session";
 
@@ -34,45 +34,22 @@ export async function middleware(request: NextRequest) {
     }
     return NextResponse.next({ request: { headers } });
   };
-  const stagingCredential = process.env.STAGING_BASIC_AUTH;
-  let stagingSession: string | undefined;
-  const withStagingSession = (response: NextResponse) => {
-    if (stagingSession) response.cookies.set("dy_staging_session", stagingSession, {
-      httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: 8 * 60 * 60,
-    });
-    return response;
-  };
-  if (process.env.NODE_ENV === "production" || stagingCredential) {
-    if (!stagingCredential) {
-      return new NextResponse("Staging access is not configured.", { status: 503 });
-    }
-    const digest = (value: string) => createHash("sha256").update(value).digest();
-    stagingSession = createHmac("sha256", stagingCredential).update("digiyatra-staging").digest("hex");
-    const basicValid = timingSafeEqual(digest(request.headers.get("authorization") ?? ""), digest(`Basic ${stagingCredential}`));
-    const cookieValid = timingSafeEqual(digest(request.cookies.get("dy_staging_session")?.value ?? ""), digest(stagingSession));
-    if (!basicValid && !cookieValid) {
-      return new NextResponse("Authorized staging access required.", {
-        status: 401,
-        headers: { "WWW-Authenticate": 'Basic realm="Digi Yatra staging", charset="UTF-8"', "Cache-Control": "no-store" },
-      });
-    }
-  }
   const { pathname, search } = request.nextUrl;
-  if (pathname !== "/admin" && !pathname.startsWith("/admin/")) return withStagingSession(forwardRequest());
+  if (pathname !== "/admin" && !pathname.startsWith("/admin/")) return forwardRequest();
   const token = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
   const isLogin = pathname === "/admin/login" || pathname.startsWith("/admin/login/");
 
   if (isLogin) {
     if (token && (await validateAdminSession(token))) {
-      return withStagingSession(redirectTo(request, "/admin/dashboard"));
+      return redirectTo(request, "/admin/dashboard");
     }
-    return withStagingSession(forwardRequest());
+    return forwardRequest();
   }
 
   if (!(await validateAdminSession(token))) {
-    return withStagingSession(redirectTo(request, `/admin/login?next=${encodeURIComponent(`${pathname}${search}`)}`));
+    return redirectTo(request, `/admin/login?next=${encodeURIComponent(`${pathname}${search}`)}`);
   }
-  return withStagingSession(forwardRequest());
+  return forwardRequest();
 }
 
 export const config = {

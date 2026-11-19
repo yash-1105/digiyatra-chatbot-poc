@@ -114,7 +114,6 @@ digiyatra-chatbot-poc/
 | `ADMIN_ALLOWED_ORIGINS` | `["https://<vercel-domain>"]` | JSON list, https only. Include any custom domain. Login from other origins returns 403. |
 | `CORS_ORIGINS` | `[]` | The browser uses the same-origin proxy. |
 | `PROXY_SHARED_SECRET` | *server-only secret shared with Vercel* | Vercel middleware signs the platform client IP; the backend validates it before rate limiting. Unsigned direct requests use their network peer. |
-| `STAGING_BASIC_AUTH` | *secret base64 username:password shared with Vercel* | Required while content approval is pending. Whole-site challenge and secure staging cookie. |
 | `TRUSTED_PROXY_HOPS` | legacy fallback only | Ignored when `PROXY_SHARED_SECRET` is configured; live deployment no longer relies on a hop-count assumption. |
 | `EMBEDDING_PROVIDER` | `lexical` (image default) | Deterministic index rebuilds. Switch to `auto` only once Sarvam enables `embeddinggemma-2`. |
 | `INDEX_DIR` | `/data/lancedb` (image default) | Optionally mount a Railway volume at `/data`. |
@@ -136,7 +135,6 @@ Other tunables (defaults are fine): `SARVAM_TIMEOUT_S=35`, `SARVAM_MAX_RETRIES=2
 | `NEXT_PUBLIC_API_BASE_URL` | *(empty)* | Empty means same-origin proxy (required for the cookie design). |
 | `NEXT_PUBLIC_CHAT_TIMEOUT_MS` | `120000` | |
 | `NEXT_PUBLIC_CHAT_MODE` | `api` | Production builds force the real API. |
-| `STAGING_BASIC_AUTH` | *server-only secret, same as Railway* | Do not prefix with NEXT_PUBLIC_. |
 | `PROXY_SHARED_SECRET` | *server-only secret, same as Railway* | Authenticates forwarded client IPs. Do not prefix with NEXT_PUBLIC_. |
 
 No admin credentials or API keys exist in any frontend variable.
@@ -262,13 +260,13 @@ Create `digiyatra-chatbot-poc` with **PUBLIC** visibility using `gh repo create 
 
 Never publish `knowledge/deploy`, `knowledge/raw`, `knowledge/curated`, the private approval manifest, knowledge inventory, live evaluation report, or `design/dgca-reference.png`. Retrieval approval does not grant redistribution rights. Knowledge-derived frontend text also requires explicit publication approval.
 
-Railway must receive the corpus through a separate, private CLI upload of an allow-listed build context. Do not enable GitHub-only backend deployment: the public checkout intentionally lacks the corpus. Keep both the frontend and direct backend access-restricted while content-owner sign-off is pending. `noindex` and CORS are not access controls.
+Railway must receive the corpus through a separate, private CLI upload of an allow-listed build context. Do not enable GitHub-only backend deployment: the public checkout intentionally lacks the corpus. The portal, information pages, chat and feedback APIs are public under the current access rules. Protect administrator pages and analytics through the existing session guards. Do not reintroduce global Basic authentication or Vercel SSO protection on this public site. Content-owner sign-off metadata remains pending; the corpus stays out of GitHub.
 
 ### Private Railway build context
 
 A reviewed local build context is prepared at `.cache/railway-context`, with a SHA-256 inventory in `.cache/railway-context-inventory.json`. It contains only the Docker build inputs: backend runtime source, migration files, pinned requirements, startup script, Docker/Railway configuration, and the private hashed retrieval corpus. It has no raw documents, local databases, credentials, tests, frontend, or logs. Regenerate this context after any backend or corpus change; verify the inventory before upload.
 
-After resource approval, project/service selection, and staging access controls are complete, upload **that directory only** with:
+After project/service selection and variable configuration, upload **that directory only** with:
 
 ```bash
 railway up .cache/railway-context --path-as-root --no-gitignore --project <project-id> --environment production --service <backend-service> --detach

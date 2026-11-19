@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -131,18 +129,6 @@ def create_app(
 
     @app.middleware("http")
     async def require_index(request: Request, call_next):
-        if request.url.path != "/api/v1/health" and (production or settings.staging_basic_auth):
-            credential = settings.staging_basic_auth
-            if not credential or not credential.get_secret_value():
-                return _error(503, "staging_locked", "Staging access is not configured.")
-            expected = "Basic " + credential.get_secret_value()
-            staging_session = hmac.new(credential.get_secret_value().encode(), b"digiyatra-staging", hashlib.sha256).hexdigest()
-            basic_valid = hmac.compare_digest(request.headers.get("authorization", "").encode(), expected.encode())
-            cookie_valid = hmac.compare_digest(request.cookies.get("dy_staging_session", "").encode(), staging_session.encode())
-            if not basic_valid and not cookie_valid:
-                return _error(401, "staging_auth_required", "Authorized staging access required.",
-                              {"WWW-Authenticate": 'Basic realm="Digi Yatra staging", charset="UTF-8"',
-                               "Cache-Control": "no-store"})
         if request.url.path.startswith("/api/v1/chat") and request.app.state.chat_service is None:
             return _error(503, "index_unavailable", "The knowledge base is not available. Please try again later.")
         response = await call_next(request)

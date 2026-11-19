@@ -83,9 +83,6 @@ class Settings(BaseSettings):
 
     # --- Admin authentication -------------------------------------------
     environment: Literal["development", "production"] = "development"
-    # Temporary whole-site access restriction while content-owner approval is pending.
-    # Base64 of username:password, shared with the server-side Next.js middleware.
-    staging_basic_auth: SecretStr | None = None
     admin_session_ttl_minutes: int = 480  # absolute lifetime
     admin_session_idle_minutes: int = 60  # sliding inactivity timeout
     admin_login_max_failures: int = 5  # per email+IP within the window

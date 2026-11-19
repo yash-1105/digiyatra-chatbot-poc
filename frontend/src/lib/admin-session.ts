@@ -21,7 +21,6 @@ export async function validateAdminSession(token: string | undefined): Promise<A
     const res = await fetch(`${BACKEND_URL}/api/v1/admin/session`, {
       headers: {
         cookie: `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}`, accept: "application/json",
-        ...(process.env.STAGING_BASIC_AUTH ? { authorization: `Basic ${process.env.STAGING_BASIC_AUTH}` } : {}),
       },
       cache: "no-store",
       signal: AbortSignal.timeout(5000),

@@ -103,8 +103,6 @@ def make_settings(tmp_path: Path, **overrides) -> Settings:
         database_url=new_database_url(tmp_path),
     )
     base.update(overrides)
-    if base.get("environment") == "production":
-        base.setdefault("staging_basic_auth", "c3ludGhldGljOnRlc3Q=")
     return Settings(_env_file=None, **base)
 
 
@@ -167,7 +165,6 @@ def app_factory(tmp_path, retriever):
         upgrade(settings.database_url)  # idempotent
         llm = llm or (fake or FakeSarvam()).client(max_retries=settings.sarvam_max_retries)
         app = create_app(settings, retriever=retriever, llm=llm)
-        headers = {"Authorization": "Basic " + settings.staging_basic_auth.get_secret_value()} if settings.staging_basic_auth else {}
-        return TestClient(app, headers=headers)
+        return TestClient(app)
 
     return _make
