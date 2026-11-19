@@ -25,4 +25,5 @@ def conversation_scope(request: Request, conversation_id: str, response: Respons
     if response is not None:
         response.set_cookie(name, token, max_age=86400, path='/', secure=request.app.state.settings.secure_cookies,
                             httponly=True, samesite='strict')
+        request.state.anonymous_cookie_header = response.headers['set-cookie']
     return hashlib.sha256(f'dy-browser-conversation:v1\0{token}\0{conversation_id}'.encode()).hexdigest()

@@ -217,3 +217,18 @@ def test_admin_password_hashing_has_bounded_concurrency(app_factory,monkeypatch)
             finally:
                 release.set()
             assert first.result().status_code==second.result().status_code==401
+
+
+def test_provider_errors_preserve_anonymous_session_for_retry_analytics(app_factory):
+    import httpx
+    from sqlalchemy import func, select
+
+    from app.db.models import Conversation
+    fake=FakeSarvam(lambda _:httpx.Response(503))
+    with app_factory(fake,sarvam_max_retries=0) as c:
+        body=dict(message='How do I register?',conversation_id='audit-failure-cookie')
+        first=c.post('/api/v1/chat',json=body)
+        assert first.status_code==503 and 'dy_chat=' in first.headers['set-cookie']
+        assert c.post('/api/v1/chat',json=body).status_code==503
+        with c.app.state.db.session() as db:
+            assert db.scalar(select(func.count()).select_from(Conversation))==1

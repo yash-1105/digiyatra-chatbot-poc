@@ -144,6 +144,9 @@ def create_app(
         if request.url.path.startswith("/api/v1/chat") and request.app.state.chat_service is None:
             return _error(503, "index_unavailable", "The knowledge base is not available. Please try again later.")
         response = await call_next(request)
+        cookie = getattr(request.state, "anonymous_cookie_header", None)
+        if cookie and "set-cookie" not in response.headers:
+            response.headers.append("set-cookie", cookie)
         response.headers.setdefault("Cache-Control", "no-store")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         return response
