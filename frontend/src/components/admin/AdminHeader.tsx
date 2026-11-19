@@ -26,7 +26,7 @@ export function AdminHeader({ email }: { email: string }) {
             <span className="leading-tight">
               <span className="block font-bold uppercase text-ink">Digi Yatra Administration</span>
               <span className="block text-xs font-semibold uppercase text-ink-muted">
-                Chatbot analytics · <span className="text-accent">POC</span>
+                Chatbot analytics
               </span>
             </span>
           </Link>

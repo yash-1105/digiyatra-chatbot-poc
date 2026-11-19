@@ -12,9 +12,9 @@ const notoDevanagari = Noto_Sans_Devanagari({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Digi Yatra Information Portal (POC)", template: "%s | Digi Yatra Portal (POC)" },
+  title: { default: "Digi Yatra Information Portal", template: "%s | Digi Yatra Portal" },
   description:
-    "Proof-of-concept information portal about Digi Yatra — paperless, contactless air travel in India — with an AI assistant. Not an official website.",
+    "Unofficial information portal about Digi Yatra — paperless, contactless air travel in India — with an AI assistant. Not an official website.",
   robots: { index: false, follow: false },
 };
 

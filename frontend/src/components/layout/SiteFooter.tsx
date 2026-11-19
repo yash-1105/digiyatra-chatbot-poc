@@ -21,11 +21,11 @@ export function SiteFooter() {
             <LogoMark className="h-12 w-12" title="" />
             <div className="leading-tight text-white">
               <p className="font-devanagari font-semibold">डिजी यात्रा सूचना पोर्टल</p>
-              <p className="text-sm font-semibold uppercase tracking-wide">Digi Yatra · POC</p>
+              <p className="text-sm font-semibold uppercase tracking-wide">Digi Yatra</p>
             </div>
           </div>
           <p className="mt-4 text-sm leading-relaxed">
-            An informational proof-of-concept about Digi Yatra — paperless, contactless air travel in India using facial
+            An information portal about Digi Yatra — paperless, contactless air travel in India using facial
             verification.
           </p>
         </div>
@@ -91,8 +91,7 @@ export function SiteFooter() {
       <div className="border-t border-white/15">
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 px-4 py-5 text-xs leading-relaxed text-white/70 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <p className="max-w-3xl">
-            <strong className="text-white">Disclaimer:</strong> This is a Proof of Concept (POC) demonstration built for
-            evaluation purposes. It is not an official website of the Digi Yatra Foundation, the Ministry of Civil Aviation,
+            <strong className="text-white">Disclaimer:</strong> This is an unofficial information portal. It is not an official website of the Digi Yatra Foundation, the Ministry of Civil Aviation,
             the DGCA or the Government of India, and implies no endorsement. Always verify information on official channels.
           </p>
           <Link href="/admin/login" className="inline-flex shrink-0 items-center gap-1 text-white/60 hover:text-white">

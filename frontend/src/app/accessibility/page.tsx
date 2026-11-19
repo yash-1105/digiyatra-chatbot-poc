@@ -35,7 +35,7 @@ export default function AccessibilityPage() {
         <h1 className="text-[2rem] text-heading">Accessibility &amp; Screen Reader Access</h1>
         <span aria-hidden="true" className="mt-3 block h-[3px] w-14 rounded bg-accent" />
         <p className="mt-5 max-w-3xl leading-relaxed text-ink-muted">
-          This proof-of-concept aims to follow WCAG 2.1 AA practices so that information about Digi Yatra is available to
+          This portal aims to follow WCAG 2.1 AA practices so that information about Digi Yatra is available to
           everyone. The following features are available on every page.
         </p>
 
@@ -71,7 +71,7 @@ export default function AccessibilityPage() {
           </table>
         </div>
         <p className="mt-8 text-sm text-ink-soft">
-          Found an accessibility problem in this POC? Please report it to the project team.
+          Found an accessibility problem on this website? Please report it to the project team.
         </p>
       </Container>
     </PublicShell>

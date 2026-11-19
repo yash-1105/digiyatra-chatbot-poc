@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
  * Original POC mark (face-scan frame + flight arc). Deliberately NOT based on
  * any government emblem or the official Digi Yatra logo.
  */
-export function LogoMark({ className, title = "Digi Yatra POC" }: { className?: string; title?: string }) {
+export function LogoMark({ className, title = "Digi Yatra Information Portal" }: { className?: string; title?: string }) {
   return (
     <svg viewBox="0 0 64 64" role="img" aria-label={title} className={cn("h-14 w-14", className)}>
       <circle cx="32" cy="32" r="31" fill="#1d3a6a" />

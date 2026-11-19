@@ -8,8 +8,8 @@ export const dictionary = {
   en: {
     govLine1: "Digi Yatra",
     govLine2: "Information Portal",
-    pocLine1: "Proof of Concept",
-    pocLine2: "Unofficial demonstration",
+    pocLine1: "Information portal",
+    pocLine2: "Unofficial website",
     skipToMain: "Skip to Main Content",
     screenReader: "Screen Reader Access",
     contrast: "Contrast",
@@ -35,7 +35,7 @@ export const dictionary = {
     navRegistration: "Registration",
     navAirports: "Airports",
     navContact: "Contact Us",
-    tickerShort: "POC demonstration — not an official Digi Yatra or Government website.",
+    tickerShort: "Unofficial portal — not an official Digi Yatra or Government website.",
     accessibility: "Accessibility",
     officialWebsite: "Official Website",
     welcome: "Welcome to Digi Yatra",
@@ -53,13 +53,13 @@ export const dictionary = {
     closeMenu: "Close menu",
     englishOnlyNote: "",
     tickerText:
-      "This website is a Proof of Concept (POC) demonstration. It is not an official website of the Digi Yatra Foundation or the Government of India.",
+      "This is an unofficial information portal. It is not an official website of the Digi Yatra Foundation or the Government of India.",
   },
   hi: {
     govLine1: "डिजी यात्रा",
     govLine2: "सूचना पोर्टल",
-    pocLine1: "प्रूफ़ ऑफ़ कॉन्सेप्ट",
-    pocLine2: "अनौपचारिक प्रदर्शन",
+    pocLine1: "सूचना पोर्टल",
+    pocLine2: "अनौपचारिक वेबसाइट",
     skipToMain: "मुख्य सामग्री पर जाएँ",
     screenReader: "स्क्रीन रीडर एक्सेस",
     contrast: "कंट्रास्ट",
@@ -85,7 +85,7 @@ export const dictionary = {
     navRegistration: "पंजीकरण",
     navAirports: "हवाई अड्डे",
     navContact: "संपर्क करें",
-    tickerShort: "POC प्रदर्शन — यह डिजी यात्रा या सरकार की आधिकारिक वेबसाइट नहीं है।",
+    tickerShort: "अनौपचारिक पोर्टल — यह डिजी यात्रा या सरकार की आधिकारिक वेबसाइट नहीं है।",
     accessibility: "सुगम्यता",
     officialWebsite: "आधिकारिक वेबसाइट",
     welcome: "डिजी यात्रा में आपका स्वागत है",
@@ -103,7 +103,7 @@ export const dictionary = {
     closeMenu: "मेनू बंद करें",
     englishOnlyNote: "विस्तृत सामग्री वर्तमान में केवल अंग्रेज़ी में उपलब्ध है।",
     tickerText:
-      "यह वेबसाइट एक प्रूफ़ ऑफ़ कॉन्सेप्ट (POC) प्रदर्शन है। यह डिजी यात्रा फ़ाउंडेशन या भारत सरकार की आधिकारिक वेबसाइट नहीं है।",
+      "यह एक अनौपचारिक सूचना पोर्टल है। यह डिजी यात्रा फ़ाउंडेशन या भारत सरकार की आधिकारिक वेबसाइट नहीं है।",
   },
 } as const;
 

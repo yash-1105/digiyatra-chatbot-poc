@@ -28,7 +28,7 @@ export default async function AdminLoginPage({ searchParams }: { searchParams: P
                 <p lang="hi" className="font-devanagari text-panel-ink/80">प्रशासन</p>
                 <span aria-hidden="true" className="my-4 block h-0.5 w-10 bg-accent" />
                 <p className="text-sm leading-relaxed text-panel-ink/90">
-                  Manage the assistant&apos;s knowledge base, approved announcements and user feedback for the Digi Yatra POC
+                  Manage the assistant&apos;s knowledge base, approved announcements and user feedback for the Digi Yatra
                   portal.
                 </p>
               </div>
