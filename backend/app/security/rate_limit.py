@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import ipaddress
 import threading
 import time
@@ -43,6 +45,15 @@ def _valid_ip(value: str) -> bool:
 
 def client_key(request: Request, trusted_proxies: list[str], hops: int = 0) -> str:
     peer = request.client.host if request.client else "unknown"
+    secret = request.app.state.settings.proxy_shared_secret
+    if secret:
+        # Only Vercel's server-side middleware can authenticate a forwarded client IP.
+        ip = request.headers.get("x-dy-client-ip", "")
+        signature = request.headers.get("x-dy-client-signature", "")
+        expected = hmac.new(secret.get_secret_value().encode(), ip.encode(), hashlib.sha256).hexdigest()
+        if _valid_ip(ip) and hmac.compare_digest(signature.encode(), expected.encode()):
+            return ip
+        return peer
     if hops > 0:
         chain = [p.strip() for p in request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
         if len(chain) >= hops and _valid_ip(chain[-hops]):

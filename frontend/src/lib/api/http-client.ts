@@ -79,7 +79,7 @@ export class HttpChatClient implements ChatClient {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
         signal: controller.signal,
-        credentials: "omit",
+        credentials: "same-origin",
       });
       if (!res.ok) throw await errorFromResponse(res);
       return res;

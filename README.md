@@ -4,6 +4,8 @@ An informational website about Digi Yatra, styled after the DGCA digigov portal,
 
 > **POC notice:** this is an unofficial demonstration. It is not a website of the Digi Yatra Foundation, MoCA, DGCA or the Government of India.
 
+This PUBLIC repository contains application source and approved frontend content. The retrieval corpus, raw documents and approval manifest are intentionally private; obtain them through the authorized private deployment channel before running corpus-dependent backend commands or tests. See `docs/PRODUCTION_DEPLOYMENT_REPORT.md` for live staging URLs and verification status. Production remains access-restricted while content-owner approval is pending.
+
 | Milestone | Scope | Status |
 |---|---|---|
 | 1 | Frontend: website, chatbot UI, admin login UI | ✅ Done |

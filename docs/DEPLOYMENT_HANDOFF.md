@@ -113,7 +113,9 @@ digiyatra-chatbot-poc/
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | `postgres://` and `postgresql://` are normalised to `postgresql+psycopg://`. SQLite is refused in production. |
 | `ADMIN_ALLOWED_ORIGINS` | `["https://<vercel-domain>"]` | JSON list, https only. Include any custom domain. Login from other origins returns 403. |
 | `CORS_ORIGINS` | `[]` | The browser uses the same-origin proxy. |
-| `TRUSTED_PROXY_HOPS` | `2` | Client IP for rate limiting = 2nd entry from the right of X-Forwarded-For (Vercel → Railway edge). **Verify after deploy (§14).** |
+| `PROXY_SHARED_SECRET` | *server-only secret shared with Vercel* | Vercel middleware signs the platform client IP; the backend validates it before rate limiting. Unsigned direct requests use their network peer. |
+| `STAGING_BASIC_AUTH` | *secret base64 username:password shared with Vercel* | Required while content approval is pending. Whole-site challenge and secure staging cookie. |
+| `TRUSTED_PROXY_HOPS` | legacy fallback only | Ignored when `PROXY_SHARED_SECRET` is configured; live deployment no longer relies on a hop-count assumption. |
 | `EMBEDDING_PROVIDER` | `lexical` (image default) | Deterministic index rebuilds. Switch to `auto` only once Sarvam enables `embeddinggemma-2`. |
 | `INDEX_DIR` | `/data/lancedb` (image default) | Optionally mount a Railway volume at `/data`. |
 | `KNOWLEDGE_CORPUS_DIR` | `/app/knowledge/deploy` (image default) | |
@@ -133,7 +135,9 @@ Other tunables (defaults are fine): `SARVAM_TIMEOUT_S=35`, `SARVAM_MAX_RETRIES=2
 | `BACKEND_URL` | `https://<railway-public-domain>` | **Server-side only.** Used by the `/api/v1/*` rewrites, which are **baked at build time**, so set it *before* building. The middleware also uses it at runtime. Set it for Production and Preview. |
 | `NEXT_PUBLIC_API_BASE_URL` | *(empty)* | Empty means same-origin proxy (required for the cookie design). |
 | `NEXT_PUBLIC_CHAT_TIMEOUT_MS` | `120000` | |
-| `NEXT_PUBLIC_CHAT_MODE` | *(unset)* | Ignored in production builds; the mock is compiled out. |
+| `NEXT_PUBLIC_CHAT_MODE` | `api` | Production builds force the real API. |
+| `STAGING_BASIC_AUTH` | *server-only secret, same as Railway* | Do not prefix with NEXT_PUBLIC_. |
+| `PROXY_SHARED_SECRET` | *server-only secret, same as Railway* | Authenticates forwarded client IPs. Do not prefix with NEXT_PUBLIC_. |
 
 No admin credentials or API keys exist in any frontend variable.
 
@@ -249,6 +253,8 @@ The Hostinger dev database's admin account is **not** transferred, so production
 3. Add the final Vercel domain(s) to the backend's `ADMIN_ALLOWED_ORIGINS` and redeploy the backend.
 4. **Middleware runtime:** `middleware.ts` uses `runtime: "nodejs"` (Next 15.5). If the Vercel build rejects it, switching to the default Edge runtime also works, because the middleware only uses `fetch`.
 
+Current live status and the required private administrator setup action are recorded in `PRODUCTION_DEPLOYMENT_REPORT.md`.
+
 ## 13. Public GitHub publication policy
 
 The current deployment request supersedes the original private-repository handoff.
@@ -265,7 +271,7 @@ A reviewed local build context is prepared at `.cache/railway-context`, with a S
 After resource approval, project/service selection, and staging access controls are complete, upload **that directory only** with:
 
 ```bash
-railway up .cache/railway-context --path-as-root --no-gitignore --project <project-id> --service <backend-service> --detach
+railway up .cache/railway-context --path-as-root --no-gitignore --project <project-id> --environment production --service <backend-service> --detach
 ```
 
 `--no-gitignore` is safe only for the inspected allow-listed context. Never use it to upload the project root. Do not publish the context or its corpus as a GitHub release, repository file, public object-store object or public container image. Railway project, service, build logs and artifacts must remain accessible only to authorized operators. The corpus contains POC-approved retrieval content; final content-owner sign-off remains pending.

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     #    rewrite + Railway edge = 2): use the N-th entry from the right, which clients cannot spoof.
     trusted_proxies: list[str] = ["127.0.0.1", "::1"]
     trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
+    proxy_shared_secret: SecretStr | None = None
 
     # --- Database (analytics + admin) ------------------------------------
     # SQLite for development; PostgreSQL in production, e.g.

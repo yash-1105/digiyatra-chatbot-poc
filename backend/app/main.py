@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -135,7 +136,10 @@ def create_app(
             if not credential or not credential.get_secret_value():
                 return _error(503, "staging_locked", "Staging access is not configured.")
             expected = "Basic " + credential.get_secret_value()
-            if not hmac.compare_digest(request.headers.get("authorization", "").encode(), expected.encode()):
+            staging_session = hmac.new(credential.get_secret_value().encode(), b"digiyatra-staging", hashlib.sha256).hexdigest()
+            basic_valid = hmac.compare_digest(request.headers.get("authorization", "").encode(), expected.encode())
+            cookie_valid = hmac.compare_digest(request.cookies.get("dy_staging_session", "").encode(), staging_session.encode())
+            if not basic_valid and not cookie_valid:
                 return _error(401, "staging_auth_required", "Authorized staging access required.",
                               {"WWW-Authenticate": 'Basic realm="Digi Yatra staging", charset="UTF-8"',
                                "Cache-Control": "no-store"})
