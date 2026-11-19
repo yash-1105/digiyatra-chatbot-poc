@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from app.rag.embeddings import Embedder, features, tokenize
+from app.rag.query import INTENT_TERMS, intent_match, normalize_query, query_intent
 from app.rag.store import KnowledgeIndex
 
 # Query expansion for common passenger phrasings (applied to keyword ranking only).
@@ -126,8 +127,11 @@ class BM25:
 
 
 def expand_query(query: str) -> str:
-    low = query.lower()
+    query = normalize_query(query)
+    low = query
     extra = [v for k, v in SYNONYMS.items() if re.search(rf"\b{re.escape(k)}\b", low) and v]
+    if intent := query_intent(query):
+        extra.append(INTENT_TERMS[intent])
     return query + (" " + " ".join(extra) if extra else "")
 
 
@@ -157,7 +161,8 @@ class Retriever:
     def reload(self) -> None:
         self._chunks = self.index.all_chunks(approved_only=True)
         self._by_id = {c["chunk_id"]: c for c in self._chunks}
-        self._tokens = [tokenize(c["embed_text"]) for c in self._chunks]
+        # URLs and file paths otherwise drown out the short FAQ / store-listing text.
+        self._tokens = [tokenize(normalize_query(re.sub(r"https?://\S+", " ", c["embed_text"]))) for c in self._chunks]
         self._bm25 = BM25(self._tokens)
 
     @property
@@ -172,13 +177,14 @@ class Retriever:
         if not query.strip() or not self._chunks:
             return []
         expanded = expand_query(query)
-        q_terms = tokenize(expanded)
-        q_core = set(tokenize(query)) - {"digi", "yatra"}
+        q_terms = list(dict.fromkeys(tokenize(expanded)))
+        q_core = set(tokenize(normalize_query(query))) - {"digi", "yatra"}
+        intent = query_intent(query)
 
         # 1) keyword ranking over all approved chunks
         bm = self._bm25.scores(q_terms)
         # Absolute normalisation against the original (unexpanded) query terms.
-        bm_max = self._bm25.max_score(tokenize(query)) * 0.6
+        bm_max = self._bm25.max_score(tokenize(normalize_query(query))) * 0.6
 
         # 2) vector candidates (approval filter applied inside LanceDB)
         vec_rows = self.index.vector_search(self.embedder.embed_query(expanded), self.candidates, approved_only=True)
@@ -187,6 +193,9 @@ class Retriever:
         candidate_ids = set(vec_score)
         ranked_bm = sorted(range(len(bm)), key=lambda i: bm[i], reverse=True)[: self.candidates]
         candidate_ids.update(self._chunks[i]["chunk_id"] for i in ranked_bm if bm[i] > 0)
+        # An approved FAQ that directly addresses a recognized intent gets a chance
+        # even if colloquial wording missed both initial candidate lists.
+        candidate_ids.update(c["chunk_id"] for c in self._chunks if intent_match(intent, c))
         idx_of = {c["chunk_id"]: i for i, c in enumerate(self._chunks)}
 
         scored: list[RetrievedChunk] = []
@@ -200,6 +209,8 @@ class Retriever:
             coverage = len(q_core & doc_terms) / len(q_core) if q_core else 0.0
             vs = vec_score.get(cid, 0.0)
             score = self.vector_weight * vs + (1 - self.vector_weight) * (0.5 * kw + 0.5 * coverage)
+            relevance = intent_match(intent, c)
+            score = min(1.0, score + 0.55 * relevance)
             scored.append(
                 RetrievedChunk(
                     chunk_id=cid,
@@ -220,7 +231,14 @@ class Retriever:
                     category=c.get("category") or "",
                 )
             )
-        scored.sort(key=lambda r: r.score, reverse=True)
+        scored.sort(key=lambda r: (r.score, intent_match(intent, {"text": r.text}),
+                                   r.keyword_score, r.vector_score, r.chunk_id), reverse=True)
+
+        # Platform/download questions need store evidence, not nearby device-error FAQs.
+        if intent == "app_download":
+            direct = [r for r in scored if intent_match(intent, {"text": r.text})]
+            if direct:
+                scored = direct
 
         # 3) threshold, duplicate suppression, per-source cap
         selected: list[RetrievedChunk] = []

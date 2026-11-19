@@ -54,6 +54,7 @@ class ChatResponse(BaseModel):
     sources: list[Source]
     notices: list[str] = Field(default_factory=list)
     model: str | None = None
+    answer_mode: Literal["knowledge", "general", "insufficient"] = "knowledge"
 
 
 class FeedbackRequest(BaseModel):

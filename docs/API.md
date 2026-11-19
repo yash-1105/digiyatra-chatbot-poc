@@ -34,6 +34,7 @@ Response `200`:
   "conversation_id": "a1b2c3d4-...",
   "answer": "Download the official app and register with your Aadhaar-linked mobile number [1]…",
   "status": "answered",
+  "answer_mode": "knowledge",
   "sources": [
     {"id": 1, "title": "Digi Yatra Registration Guide — Steps for Registration",
      "source_file": "registration_details.md", "section": "Digi Yatra Registration Guide > Steps for Registration",
@@ -45,12 +46,13 @@ Response `200`:
 }
 ```
 
-- **Citations.** `[n]` markers in `answer` refer to `sources[n-1]`. They are produced by the model as `[S#]` references to the retrieved evidence. The server validates and renumbers them, drops any that don't match supplied evidence, and returns only the sources actually cited. An answer with no valid citation is never shown.
+- **Citations.** `[n]` markers in `answer` refer to `sources[n-1]`. They are produced by the model as `[S#]` references to the retrieved evidence. The server validates and renumbers them, drops any that don't match supplied evidence, and returns only the sources actually cited. Every substantive Digi Yatra claim needs approved supporting evidence. Narrow general definitions use no knowledge-base citations.
+- **`answer_mode` (additive field):** `knowledge` uses approved evidence and validated citations; `general` is limited to allow-listed basic technology definitions (Android, OTP, QR, NFC, facial recognition), explicitly labelled as general rather than Digi Yatra policy, with empty `sources`; `insufficient` makes no unsupported policy claim. Current airport availability, live operations, account access and international trials never use general knowledge. A cautious partial answer can retain citations to the limited evidence it describes.
 - **`status` values:**
 
   | Value | Meaning | Calls the LLM? |
   |---|---|---|
-  | `answered` | Grounded answer | Yes |
+  | `answered` | Grounded answer or clearly labelled general explanation | Yes |
   | `insufficient_evidence` | Safe fallback | Yes, or skipped if no evidence |
   | `out_of_scope` | Not about Digi Yatra | No |
   | `refused` | Prompt injection, secret extraction, or a detected leak | No |

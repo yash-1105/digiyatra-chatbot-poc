@@ -21,10 +21,11 @@ import re
 from dataclasses import dataclass, field
 
 from app.rag.embeddings import tokenize
+from app.rag.query import evidence_tokens
 
 KEEP_SUPPORT = 0.4  # min share of a sentence's content words found in a cited source
 REATTRIBUTE_SUPPORT = 0.5  # stricter bar for moving a sentence to a different / uncited source
-MIN_FACTUAL_TOKENS = 4  # sentences with fewer content words are treated as connective text
+MIN_FACTUAL_TOKENS = 1  # short instructions and "you can" claims still need evidence
 
 # Words that carry no evidential content in this domain.
 GENERIC = frozenset(
@@ -34,12 +35,12 @@ GENERIC = frozenset(
         "confirm recommend recommended suggest advised available help support passenger passengers user users "
         "you your yours here say says said following below above detail details guidance process step steps "
         "need needs required require use using used able ensure make sure way ways one first next then finally "
-        "information time sensitive latest updated update"
+        "information time sensitive latest updated update item items relevant second third"
     )
 )
 _ADVISORY = re.compile(
-    r"(?i)^\s*(please|for (more|further|the latest)|you (can|should|may)|do not share|don't share|never share|"
-    r"note that|if you (need|have)|this information|the information|for support|contact)\b"
+    r"(?i)^\s*((please )?(check|verify|contact)|for (more|further|the latest)|do not share|don't share|never share|"
+    r"for support)\b"
 )
 # Statements ABOUT the evidence ("no phone number is listed", "I cannot confirm…") assert no new fact.
 _DECLINE = re.compile(
@@ -50,6 +51,7 @@ _DECLINE = re.compile(
 _MARKER = re.compile(r"\[(\d+)\]")
 _NUMBER = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)?(?![\w.])")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=\S)")
+_LIST_PREFIX = re.compile(r"^\s*(?:\d+[.)]|[-*•])\s+")
 
 
 @dataclass
@@ -65,10 +67,14 @@ class GroundingResult:
 def _split(text: str) -> list[str]:
     """Split into sentences; markers written after the full stop ("…OTP. [1]") stay with their sentence."""
     out: list[str] = []
-    for para in re.split(r"(\n\s*\n)", text):
-        if not para.strip() or re.fullmatch(r"\n\s*\n", para):
-            out.append(para)
+    for line in text.splitlines(keepends=True):
+        para = line.rstrip("\r\n")
+        if not para.strip():
+            out.append("\n")
             continue
+        prefix = _LIST_PREFIX.match(para)
+        if prefix:
+            para = para[prefix.end() :]
         parts = _SENTENCE_END.split(para)
         merged: list[str] = []
         for p in parts:
@@ -79,13 +85,15 @@ def _split(text: str) -> list[str]:
                 if not p.strip():
                     continue
             merged.append(p)
+        if prefix and merged:
+            merged[0] = prefix.group() + merged[0]
         out.extend(merged)
-        out.append(" ")
+        out.append("\n" if line.endswith("\n") else " ")
     return out
 
 
 def _content(sentence: str) -> set[str]:
-    return {t for t in tokenize(_MARKER.sub(" ", sentence)) if t not in GENERIC and not t.isdigit()}
+    return evidence_tokens(_MARKER.sub(" ", sentence)) - evidence_tokens(" ".join(GENERIC))
 
 
 def _support(words: set[str], evidence_tokens: set[str]) -> float:
@@ -100,9 +108,42 @@ def _numbers_ok(sentence: str, evidence_texts: list[str]) -> bool:
     return all(re.search(rf"(?<![\d.]){re.escape(n)}(?![\d])", pool) for n in nums)
 
 
+def _polarity_ok(sentence: str, evidence: str) -> bool:
+    """Reject common policy reversals that bag-of-words overlap alone cannot detect.
+
+    This supplements lexical support; it is deliberately not a semantic entailment model.
+    FAQ question premises must never override their answers.
+    """
+    if _DECLINE.match(sentence):
+        return True
+    answer = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", evidence, flags=re.S).lower()
+    claim = sentence.lower().replace("’", "'")
+    # A required platform, identity provider, format or technology must actually
+    # occur in the evidence. Other overlapping words cannot establish its policy.
+    anchors = evidence_tokens("NFC OTP QR Android iOS iPhone DigiLocker Aadhaar PDF JPEG PNG lounge payment")
+    if (evidence_tokens(claim) & anchors) - evidence_tokens(answer):
+        return False
+    if "aadhaar" in claim and re.search(r"\b(register|registration|create)\b", claim):
+        required = bool(re.search(r"\b(mandatory|required|necessary)\b", answer))
+        bypass = bool(re.search(r"\b(can|may)\b.*\bwithout\b|\bnot (?:mandatory|required|necessary)\b", claim))
+        if required and bypass:
+            return False
+    if re.search(r"\b(centrally|central(?:ized|ised)?|central server)\b", claim) and re.search(
+        r"\b(stor\w*|sav\w*)\b", claim
+    ):
+        if re.search(r"\b(no|not|never|isn't|aren't)\b.{0,65}\b(central\w*|stor\w*)\b", answer) and not re.search(
+            r"\b(no|not|never|isn't|aren't)\b", claim
+        ):
+            return False
+    if re.search(r"\b(mandatory|required|compulsory)\b", claim) and "aadhaar" not in claim:
+        if "voluntary" in answer and not re.search(r"\b(not|isn't|never)\b", claim):
+            return False
+    return True
+
+
 def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str]) -> GroundingResult:
     """`text` uses [n] markers; marker_to_hit maps n -> 0-based evidence index. Returns re-numbered text."""
-    ev_tokens = [set(tokenize(e)) for e in evidence]
+    ev_tokens = [evidence_tokens(e) for e in evidence]
     res = GroundingResult(text="", cited_hits=[])
     pieces: list[str] = []
 
@@ -110,20 +151,32 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
         if not sent.strip():
             pieces.append(sent)
             continue
+        prefix_match = _LIST_PREFIX.match(sent)
+        prefix = prefix_match.group() if prefix_match else ""
+        if prefix_match:
+            sent = sent[prefix_match.end() :]
         hits = [marker_to_hit[int(m)] for m in _MARKER.findall(sent) if int(m) in marker_to_hit]
         hits = list(dict.fromkeys(hits))
         body = _MARKER.sub("", sent).rstrip()
         body = re.sub(r"\s+([.,;:!?])", r"\1", body)
         words = _content(body)
-        factual = len(words) >= MIN_FACTUAL_TOKENS and not _ADVISORY.match(body) and not _DECLINE.search(body)
+        factual = len(words) >= MIN_FACTUAL_TOKENS and not _ADVISORY.match(body) and not _DECLINE.match(body)
+        if any(not _polarity_ok(body, evidence[h]) for h in (hits or list(range(len(evidence))))):
+            factual = True
 
         if not factual:
             keep = hits  # connective / advisory text: leave its markers untouched
         else:
-            keep = [h for h in hits if _support(words, ev_tokens[h]) >= KEEP_SUPPORT]
+            keep = [
+                h for h in hits if _support(words, ev_tokens[h]) >= KEEP_SUPPORT and _polarity_ok(body, evidence[h])
+            ]
             res.removed_markers += len(hits) - len(keep)
             if not keep:
-                best = max(range(len(evidence)), key=lambda i: _support(words, ev_tokens[i]), default=None)
+                best = max(
+                    (i for i in range(len(evidence)) if _polarity_ok(body, evidence[i])),
+                    key=lambda i: _support(words, ev_tokens[i]),
+                    default=None,
+                )
                 if best is not None and _support(words, ev_tokens[best]) >= REATTRIBUTE_SUPPORT:
                     keep = [best]
                     res.reattributed += 1
@@ -140,7 +193,7 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
         if marks:
             m = re.match(r"^(.*?)([.!?]*)$", body, re.S)
             body = f"{m.group(1)} {marks}{m.group(2)}" if m else f"{body} {marks}"
-        pieces.append(body + " ")
+        pieces.append(prefix + body + " ")
 
     res.text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", "".join(pieces))).strip()
     res.text = re.sub(r"\n{3,}", "\n\n", res.text)

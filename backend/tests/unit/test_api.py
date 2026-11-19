@@ -73,7 +73,7 @@ def test_model_reports_insufficient_evidence(app_factory):
     fake = FakeSarvam(lambda body: FakeSarvam.ok("INSUFFICIENT_EVIDENCE"))
     body = ask(app_factory(fake), "What is the Digi Yatra customer care phone number?").json()
     assert body["status"] == "insufficient_evidence"
-    assert "won't guess" in body["answer"] and body["sources"] == []
+    assert "verified information" in body["answer"] and body["sources"] == []
 
 
 def test_follow_up_uses_conversation_context(app_factory, fake_sarvam):
@@ -102,11 +102,11 @@ def test_conflicting_sources_are_flagged_to_the_model(app_factory, fake_sarvam):
     assert "CONFLICT GROUP C1" in user_turn and "Conflict note (internal" in user_turn
 
 
-def test_time_sensitive_sources_carry_a_notice(app_factory, fake_sarvam):
+def test_current_airports_require_verification_without_model_guessing(app_factory, fake_sarvam):
     body = ask(app_factory(fake_sarvam), "Which airports currently support Digi Yatra?").json()
-    assert any(s["time_sensitive"] for s in body["sources"])
-    assert any("time-sensitive" in n for n in body["notices"])
-    assert "TIME-SENSITIVE" in fake_sarvam.requests[0]["messages"][-1]["content"]
+    assert body["answer_mode"] == "insufficient" and body["sources"] == []
+    assert "official airport list" in body["answer"]
+    assert fake_sarvam.requests == []
 
 
 # ------------------------------------------------------------------ guardrails
@@ -158,11 +158,9 @@ def test_hallucinated_links_removed(app_factory):
 
 def test_draft_international_trial_not_presented(app_factory, fake_sarvam):
     body = ask(app_factory(fake_sarvam), "Can I use Digi Yatra with my ePassport on an international IndiGo flight?").json()
-    files = FakeSarvam.evidence_files(fake_sarvam.requests[0])
-    assert files and not any("IPT" in f or f.endswith(".docx") for f in files)
-    assert "support_04_general_information.md" in files
-    assert "ePassport-based" not in fake_sarvam.requests[0]["messages"][-1]["content"]
-    assert all(".docx" not in s["source_file"] for s in body["sources"])
+    assert body["answer_mode"] == "insufficient" and body["sources"] == []
+    assert "can't verify" in body["answer"]
+    assert fake_sarvam.requests == []
 
 
 # ---------------------------------------------------------- failures & limits

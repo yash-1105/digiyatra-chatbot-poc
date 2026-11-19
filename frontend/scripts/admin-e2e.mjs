@@ -26,6 +26,7 @@ const check = (name, ok, detail = "") => {
 };
 
 function chromiumPath() {
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   const root = join(homedir(), ".cache", "ms-playwright");
   for (const d of readdirSync(root).filter((d) => d.startsWith("chromium_headless_shell-")).sort().reverse()) {
     const p = join(root, d, "chrome-headless-shell-linux64", "chrome-headless-shell");
@@ -96,7 +97,7 @@ try {
     await pub.getByText("The assistant is typing…").waitFor({ state: "detached", timeout: 130000 });
   };
   await askUi("How do I register for Digi Yatra?");
-  await askUi("Which airports support Digi Yatra?");
+  await askUi("How do I upload a boarding pass PDF from my phone?");
   const srcBtn = pub.locator('[role="log"] > div.flex-col.items-start').last().getByRole("button", { name: /Sources \(\d+\)/ });
   await srcBtn.click();
   const files = await pub.locator('[role="log"] ol').last().locator("span.font-mono").allTextContents();

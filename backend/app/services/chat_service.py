@@ -13,11 +13,13 @@ from fastapi.concurrency import run_in_threadpool
 from app.clients.sarvam import SarvamChatClient, SarvamError
 from app.config import Settings
 from app.db.session import utcnow
+from app.rag.query import query_intent
 from app.rag.retriever import RetrievedChunk, Retriever
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, check_output, pii_notice
 from app.services.analytics import AnalyticsService
+from app.services.answering import general_system_prompt, general_topic, restricted_request
 from app.services.conversation import ConversationStore, Turn
 from app.services.prompts import (
     CANARY,
@@ -51,8 +53,8 @@ MSG_OUT_OF_SCOPE = (
     "supported airports, privacy and app troubleshooting. Please ask a Digi Yatra-related question."
 )
 MSG_INSUFFICIENT = (
-    "I couldn't find this in the approved Digi Yatra information available to me, so I won't guess. "
-    f"For further help, please contact Digi Yatra customer care at {SUPPORT_EMAIL} or visit "
+    "I don't have verified information to confirm that Digi Yatra detail. "
+    "You can check the official guidance or contact support through "
     "https://www.digiyatrafoundation.com/."
 )
 NOTICE_NO_ACTIONS = (
@@ -76,7 +78,7 @@ _DECLINE = re.compile(
 )
 
 _FOLLOW_UP = re.compile(
-    r"(?i)^(and|also|what about|how about|then|so|but|ok|okay)\b|\b(it|this|that|they|them|those|these|there|same|above)\b"
+    r"(?i)^(and|also|what about|how about|then|so|but|ok|okay)\b|\b(it|this|that|they|them|she|he|her|him|those|these|there|same|above|too)\b"
 )
 
 
@@ -113,7 +115,9 @@ class ChatDeps:
 
 
 def _is_follow_up(text: str) -> bool:
-    return len(text.split()) <= 4 or bool(_FOLLOW_UP.search(text)) and len(text.split()) <= 14
+    if general_topic(text):
+        return False
+    return bool(_FOLLOW_UP.search(text)) and len(text.split()) <= 20
 
 
 def _strip_markers(text: str) -> str:
@@ -150,6 +154,7 @@ class ChatService:
             sources=sources or [],
             notices=notices or [],
             model=model,
+            answer_mode="knowledge" if status == "answered" else "insufficient",
         )
 
     def _history(self, req: ChatRequest) -> list[Turn]:
@@ -157,7 +162,28 @@ class ChatService:
         if server is not None:
             return server
         # Unknown conversation (e.g. after restart): recover only the user's own past questions.
-        return [Turn("user", h.content[:1000]) for h in req.history if h.role == "user"]
+        return [Turn("user", assess_input(h.content[:1000]).redacted_text)
+                for h in req.history if h.role == "user" and not assess_input(h.content).injection]
+
+    async def _general_answer(self, req: ChatRequest, topic: str, notices: list[str]) -> ChatResponse:
+        result = await self._call_llm([
+            {"role": "system", "content": general_system_prompt(topic, CANARY)},
+            {"role": "user", "content": req.message},
+        ], req.conversation_id)
+        key = self.d.settings.sarvam_api_key
+        checked = check_output(result.content, n_sources=0, secrets=[key.get_secret_value()] if key else [],
+                               canary=CANARY, allowed_urls=set(), allowed_url_prefixes=())
+        # Never allow a definition to turn into an uncited Digi Yatra policy or invented source.
+        policy = re.search(r"(?i)\b(digi\s*yatra|aadhaar|airport|boarding|eligibility|retention|passport)\b", checked.text)
+        if checked.leaked:
+            return self._response(req, MSG_REFUSED, "refused", notices=notices, model=result.model)
+        if not checked.text or policy or checked.invalid_citations or checked.removed_urls or checked.removed_actions:
+            return self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model)
+        answer = "General explanation (not Digi Yatra policy):\n\n" + checked.text
+        self.d.conversations.append(req.conversation_id, req.message, checked.text)
+        response = self._response(req, answer, "answered", notices=notices, model=result.model)
+        response.answer_mode = "general"
+        return response
 
     async def _call_llm(self, messages: list[dict], session_id: str):
         try:
@@ -220,16 +246,36 @@ class ChatService:
             return done(self._response(req, MSG_GREETING, "greeting", notices=notices))
         if a.live_status:
             return done(self._response(req, MSG_LIVE, "live_status", notices=notices))
+        if restriction := restricted_request(question):
+            return done(self._response(req, restriction, "insufficient_evidence", notices=notices))
+
+        topic = general_topic(question)
+        if topic:
+            # Definition requests are distinct from nearby troubleshooting FAQs.
+            # If no approved source actually defines the term, use the narrow general mode.
+            definition_hits = self.d.retriever.search(question, s.retrieval_top_k)
+            definition = re.compile(rf"(?i)\b{re.escape(topic)}\b.{{0,30}}\b(is|means|stands for|refers to)\b")
+            if not any(definition.search(re.sub(r"^Q:.*?\nA:\s*", "", h.text, flags=re.S)) for h in definition_hits):
+                return done(await self._general_answer(req, topic, notices))
 
         history = self._history(req)
         retrieval_query = question
         prev_user = next((t.content for t in reversed(history) if t.role == "user"), None)
         if prev_user and _is_follow_up(question):
-            retrieval_query = f"{prev_user} {question}"
+            previous = [t.content for t in history if t.role == "user"][-3:]
+            # Explicit new subjects take precedence over stale conversational anchors.
+            if not query_intent(question) or len(question.split()) <= 7:
+                retrieval_query = " ".join([*previous, question])
 
         hits = self.d.retriever.search(retrieval_query, s.retrieval_top_k)
         top = hits[0].score if hits else 0.0
-        if not hits or (not a.domain_related and top < 0.35):
+        # Absence of evidence for a named requirement is not evidence that it
+        # is unnecessary. In particular, general NFC definitions cannot answer
+        # questions about Digi Yatra's device requirements.
+        if any(not any(re.search(rf"(?i)\b{term}\b", h.text) for h in hits)
+               for term in ("nfc", "lounge") if re.search(rf"(?i)\b{term}\b", question)):
+            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices), top)
+        if not hits or (not a.domain_related and not query_intent(retrieval_query) and top < 0.35):
             status = "insufficient_evidence" if a.domain_related else "out_of_scope"
             msg = MSG_INSUFFICIENT if a.domain_related else MSG_OUT_OF_SCOPE
             if a.action_request:
