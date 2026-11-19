@@ -53,6 +53,9 @@ export function MessageBubble({ message, canRetry, onRetry, onFeedback }: Props)
   }
 
   const isMock = message.origin === "mock";
+  const notices = (message.notices ?? []).filter(
+    (notice) => notice !== "Some of this information is time-sensitive and may have changed. Please verify on the official Digi Yatra website before you travel.",
+  );
   return (
     <div className="flex flex-col items-start animate-fade-in">
       <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-line-soft bg-surface px-3.5 py-2.5 text-[0.92rem] leading-relaxed text-ink shadow-card">
@@ -69,9 +72,9 @@ export function MessageBubble({ message, canRetry, onRetry, onFeedback }: Props)
         <div>
           <RichText text={message.content} />
         </div>
-        {message.notices && message.notices.length > 0 ? (
+        {notices.length > 0 ? (
           <ul className="mt-2 space-y-1">
-            {message.notices.map((n) => (
+            {notices.map((n) => (
               <li key={n} className="flex gap-1.5 rounded bg-warning-soft px-2 py-1.5 text-[0.75rem] leading-snug text-ink">
                 <Info aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                 {n}

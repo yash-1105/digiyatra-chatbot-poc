@@ -19,16 +19,11 @@ export function UtilityBar() {
   return (
     <div className="bg-navy text-white">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-1.5 sm:px-6 lg:px-8">
-        {/* Left: two stacked bilingual organisation lines, divided by a rule */}
+        {/* Left: bilingual organisation name */}
         <div className="flex items-center gap-3 text-[0.68rem] font-semibold uppercase leading-tight">
           <div>
             <span className="block font-devanagari normal-case">डिजी यात्रा सूचना पोर्टल</span>
             <span className="block">Digi Yatra Information Portal</span>
-          </div>
-          <span aria-hidden="true" className="h-7 w-px bg-white/50" />
-          <div>
-            <span className="block font-devanagari normal-case">प्रूफ़ ऑफ़ कॉन्सेप्ट</span>
-            <span className="block">POC Demonstration</span>
           </div>
         </div>
 

@@ -9,7 +9,7 @@ import { mainNav, topLinks } from "@/lib/navigation";
 
 /**
  * White organisation-branding header: logo + bilingual name on the left;
- * on the right a small pipe-separated link row, a red notice line and the
+ * on the right a small pipe-separated link row and the
  * blue main navigation (home icon first), exactly like the DGCA layout.
  */
 export function SiteHeader() {
@@ -33,18 +33,18 @@ export function SiteHeader() {
     <header className="border-b border-line bg-surface shadow-[0_2px_4px_rgb(0_0_0/0.06)]">
       <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
         {/* Branding */}
-        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label="Digi Yatra Information Portal (POC) — Home">
+        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label="Digi Yatra Information Portal — Home">
           <LogoMark className="h-12 w-12 sm:h-14 sm:w-14" title="" />
           <span className="leading-tight">
             <span className="block font-devanagari text-[1.05rem] font-bold text-ink">डिजी यात्रा सूचना पोर्टल</span>
             <span className="block text-[0.95rem] font-bold uppercase text-ink">Digi Yatra</span>
             <span className="block text-[0.78rem] font-semibold uppercase text-ink-muted">
-              Information Portal · <span className="text-accent">POC</span>
+              Information Portal
             </span>
           </span>
         </Link>
 
-        <div className="ml-auto hidden min-w-0 flex-col items-end gap-1 xl:flex">
+        <div className="ml-auto hidden min-w-0 flex-col items-end gap-3 xl:flex">
           {/* Top link row */}
           <ul className="pipe-list flex items-center text-[0.9rem] text-ink-muted">
             {topLinks.map((l) => (
@@ -61,12 +61,8 @@ export function SiteHeader() {
               </Link>
             </li>
           </ul>
-          {/* Red notice line (POC disclaimer), like DGCA's red ticker */}
-          <p className="max-w-[52rem] truncate text-[0.78rem] font-semibold text-alert" title={t("tickerText")}>
-            {t("tickerText")}
-          </p>
           {/* Main navigation */}
-          <nav aria-label="Main" className="mt-1">
+          <nav aria-label="Main">
             <ul className="flex flex-nowrap items-center justify-end gap-x-6 text-[1.02rem]">
               <li>
                 <Link href="/" className="text-brand hover:text-brand-strong" aria-label={t("home")}>
@@ -97,11 +93,6 @@ export function SiteHeader() {
           <span className="text-sm font-medium">{menuOpen ? t("closeMenu") : t("menu")}</span>
         </button>
       </div>
-
-      {/* Mobile notice line */}
-      <p className="border-t border-line-soft px-4 py-1.5 text-center text-[0.75rem] font-semibold text-alert xl:hidden">
-        {t("tickerShort")}
-      </p>
 
       {/* Mobile navigation drawer */}
       <nav
