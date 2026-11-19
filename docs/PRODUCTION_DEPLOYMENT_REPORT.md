@@ -2,7 +2,7 @@
 
 Date: 2026-11-19 (Asia/Kolkata)
 
-**Status: PUBLIC PORTAL AND CHATBOT DEPLOYED; ADMINISTRATION REMAINS SESSION-PROTECTED.**
+**Status: BILINGUAL SARVAM CHAT AND AI COST DASHBOARD DEPLOYED; ANTHROPIC INTEGRATION DEPLOYED, FINAL PROVIDER READINESS PENDING OPERATOR ACTION. ADMINISTRATION REMAINS SESSION-PROTECTED.**
 
 ## Live deployment
 
@@ -13,10 +13,10 @@ Date: 2026-11-19 (Asia/Kolkata)
 | Backend | https://backend-production-ab8a175f.up.railway.app |
 | Public GitHub repository | https://github.com/yash-1105/digiyatra-chatbot-poc — PUBLIC |
 | Railway project | https://railway.com/project/d3e6f900-46b4-401b-a165-c5b0aba6718a |
-| Backend deployment | `f8a17f0b-70a5-425f-9860-ad3830bd5802`, SUCCESS |
-| Frontend deployment | Existing Vercel frontend retained; no frontend runtime change required |
+| Backend deployment | `06de3468-4252-4839-9439-f281f0643857`, SUCCESS |
+| Frontend deployment | `dpl_5f7atntEfStZPqivC7w5xZnCz1jY`, READY |
 
-The authentication-fix sections below describe the earlier release. The latest conversational-quality deployment and its separate verification results are recorded at the end.
+The authentication-fix sections below describe the earlier release. The latest release and its separate verification results are recorded at the end.
 
 ## Authentication fix
 
@@ -169,3 +169,62 @@ Fresh desktop and mobile browser contexts loaded the real Vercel website and ren
 Live administrator preservation checks: **7/7 passed**, including unchanged Argon2id hash, accepted authenticated session, protected analytics, rejected missing/wrong CSRF and cross-origin logout, authenticated dashboard rendering, normal browser logout and rejected replay of the revoked session. The short-lived verification session was revoked through normal logout. The production password was not obtained or reset; actual password-login behavior was exercised in the isolated browser acceptance test instead.
 
 No Vercel redeploy was necessary because no frontend runtime code changed. No Railway billing settings, credentials, existing application/analytics records, knowledge approval rules or unrelated infrastructure were changed. The sole production database write for verification was the temporary administrator session described above, which was revoked. Remaining operational issues are the existing missing favicon and the previously documented Railway legacy-configuration migration deadline. Generative language and lexical validation remain imperfect; the evaluation is a bounded regression sample, not a guarantee for every possible passenger question.
+
+
+## Bilingual providers and AI costs release — 2026-11-19
+
+**Readiness is partial:** English/Hindi Sarvam chat, provider/language controls, usage accounting and the dashboard are live. Anthropic integration and earlier real-model bilingual evaluations succeeded, but the provider subsequently became unavailable and requires an operator account action. Its final successful-response verification after the last Hindi-grounding patch remains pending. The application reports the selected provider's failure and does not silently switch to another paid provider. No provider keys or account-specific financial details are published here.
+
+Application implementation: `c056cc3`; definition/paraphrase improvements: `d145abe`; final Devanagari word-boundary fix: `790bfb3`. Railway deployment `06de3468-4252-4839-9439-f281f0643857` is SUCCESS. Vercel deployment `dpl_5f7atntEfStZPqivC7w5xZnCz1jY` is READY and aliased to https://digiyatra-chatbot-poc.vercel.app. The backend remains https://backend-production-ab8a175f.up.railway.app.
+
+[Implementation, configuration and optimization details](BILINGUAL_PROVIDER_UPGRADE.md) cover the two fixed models, independent English/हिन्दी selection, Hindi/Hinglish retrieval normalization, strict request allow-list, bounded context/history, extractive topic summaries, safe FAQ caching and privacy-safe usage accounting. The existing Dockerfile, PostgreSQL, one backend replica, approved private corpus and DGCA-inspired frontend remain in use. Migration `0002_ai_usage` adds only the usage table; existing accounts and analytics records were not reset. Both existing API keys were retained securely in Railway. Billing settings and unrelated infrastructure were neither checked nor changed.
+
+### Measured token and cost comparison
+
+A matched 24-question pre-deployment sample was run for each provider, using real APIs with separate synthetic databases. Four questions use deterministic safety handling; the other 20 generally call the selected model. The optimized Sarvam sample needed one additional citation repair, which is included below. FAQ answer caching was disabled in this comparison, so its benefit is not folded into the token-reduction percentages.
+
+| Provider / measure | Full prompt/context baseline | Optimized sample | Change |
+|---|---:|---:|---:|
+| Sarvam input tokens | 28,831 | 19,017 | 34.04% fewer |
+| Sarvam output tokens | 2,274 | 2,093 | 7.96% fewer |
+| Sarvam estimated USD | $0.002089600 | $0.001748035 | 16.35% lower |
+| Anthropic input tokens | 45,193 | 29,068 | 35.68% fewer |
+| Anthropic output tokens | 7,558 | 6,496 | 14.05% fewer |
+| Anthropic estimated USD | $0.008298300 | $0.005001625 | 39.73% lower |
+
+These are observed sample measurements, not guaranteed savings for arbitrary traffic or an invoice. Input totals include cached tokens once. Anthropic cache-read/write fields and Sarvam cached-input fields came from actual provider usage responses; no token counts in this measured sample were inferred. The sample's mean per-question latency changed from 0.556s to 0.433s for Sarvam and 2.031s to 1.852s for Anthropic. Medians were 0.590s → 0.468s and 1.730s → 1.745s respectively: the Haiku median did not improve. This includes deterministic fallbacks and is not a latency guarantee.
+
+Both providers had 24/24 expected modes, language selection, citation structures and procedural-format checks in that optimized comparison. A subsequent rerun encountered one conservative Hindi privacy fallback for Haiku. Diagnosis identified Devanagari punctuation being treated as part of a word and missing equivalent vocabulary. Those bugs were fixed without lowering grounding thresholds. The final Sarvam rerun passes all 24 cases; final Haiku rerun is blocked by provider readiness. The revised short definition prompt and final punctuation fixes were verified separately; no new percentage savings is inferred for those patches.
+
+Reference-cost assumptions are explicitly configurable: Sarvam INR 10 input / 0.25 cached / 25 output per million tokens, converted at an indicative INR 85/USD; Anthropic USD 0.10 input / 0.50 output / 0.01 cache read / 0.125 five-minute cache write per million. Account-specific pricing eligibility, taxes, credits and external uses of the API key are outside these application estimates. The primary dashboard excludes isolated evaluation calls by design. See the linked implementation report for primary pricing/API sources and library investigation.
+
+A separate real Sarvam FAQ repeat test returned `cached=false`, then `cached=true` for a new conversation. The second reply used no model call. It had a new message ID, and feedback/interaction recording remained active. Cache keys include language, provider and approved corpus revision; private or contextual questions are not eligible.
+
+### Tests and final live checks
+
+| Check | Result |
+|---|---|
+| Backend offline suite | 273 passed; no failures |
+| Existing real Sarvam live suite | 15 passed |
+| Frontend | Type checking, ESLint and production build pass |
+| Existing chat browser acceptance | Pass |
+| Existing admin browser acceptance | 27/27 pass in a synthetic database |
+| New bilingual/provider/cost browser flow | 20/20 pass locally with real providers before provider unavailability |
+| Final deployed Sarvam sample | 24/24 HTTP success; expected modes, selected languages, concept probes, citations, formatting and source relevance all pass |
+| Final deployed Anthropic availability | Safe HTTP 503; no cross-provider fallback; successful-response retest pending |
+| Migration and runtime identity | `0002_ai_usage`; hashes of all 46 application modules verified |
+| Production effective limits | Output 900 tokens/provider; context 1,800 estimated tokens / top 3; prompt 6,000 estimated tokens; signed-client rate 20/minute, plus Anthropic 10/minute |
+| Synthetic resolution feedback | HTTP 204 |
+| Live admin preservation/session/CSRF/browser checks | 7/7 pass; cost section renders; existing Argon2id hash unchanged; temporary verification session revoked |
+| Public health/security checks | 10/10 pass across Vercel and Railway: healthy APIs, anonymous analytics 401, private corpus/env/schema paths 404 |
+| Public desktop/mobile rendering | 40/40 checks pass with intercepted real response fixtures; selector persistence, sources and failure behavior verified |
+
+The deployed API evaluation runs FastAPI's ASGI client inside the actual Railway image, with real provider credentials/index and an explicitly temporary synthetic database. It does not modify production service configuration or write synthetic conversations/cost rows to primary PostgreSQL. Public browser rendering uses those deployed Sarvam responses and earlier real Anthropic responses captured before its unavailability; this is not a claim that Haiku is currently serving live successful responses through Vercel. The real public proxy is separately checked with health/security requests. No test passenger data, passwords or private prompts are published.
+
+Representative observed replies, abbreviated without republishing source passages:
+
+- English: “Yes, you can use Digi Yatra on Android,” followed by an approved store link and citation.
+- Hindi: “फोन पर बोर्डिंग पास की PDF खोलें, शेयर विकल्प चुनें, Digi Yatra चुनें और सहमति दें,” presented as numbered steps with citations.
+- General Hindi: “ओटीपी (वन-टाइम पासवर्ड) एक अस्थायी सुरक्षा कोड है जिसे केवल एक बार उपयोग किया जाता है,” explicitly labelled as general information rather than Digi Yatra policy, without fabricated sources.
+
+Remaining limitations: Anthropic requires operator action before final readiness can be confirmed; bounded normalization and lexical claim validation are not a universal multilingual semantic proof; in-process caches, summaries and limits reset on restart and require one replica; content-owner signoff remains pending. The screenshot suite still reports the existing missing `/favicon.ico`, and the previously documented Railway legacy-configuration migration deadline remains unchanged.
