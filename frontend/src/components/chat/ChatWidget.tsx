@@ -1,0 +1,245 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlaskConical, Headset, MessageSquareText, Trash2, X } from "lucide-react";
+import { LogoMark } from "@/components/brand/LogoMark";
+import { starterQuestions } from "@/content/starter-questions";
+import { MOCK_ERROR_TRIGGER } from "@/lib/api";
+import { OPEN_CHAT_EVENT, type OpenChatDetail } from "@/lib/chat-events";
+import { cn } from "@/lib/cn";
+import { ChatComposer } from "./ChatComposer";
+import { MessageBubble } from "./MessageBubble";
+import { TypingIndicator } from "./TypingIndicator";
+import { useChat } from "./useChat";
+
+type Phase = "closed" | "open" | "closing";
+const CLOSE_ANIMATION_MS = 160;
+
+/**
+ * Floating assistant: round navy launcher at the bottom-right (as on the DGCA
+ * portal) that opens an animated chat panel — full-screen on phones.
+ */
+export function ChatWidget() {
+  const [phase, setPhase] = useState<Phase>("closed");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const { messages, loading, send, retry, giveFeedback, clear, mode } = useChat();
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const pendingQuestion = useRef<string | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  const [pendingTick, setPendingTick] = useState(0);
+
+  const open = useCallback(() => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    setPhase("open");
+  }, []);
+  const close = useCallback(() => {
+    setPhase((p) => (p === "open" ? "closing" : p));
+    setConfirmClear(false);
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      closeTimer.current = null;
+      setPhase("closed");
+      launcherRef.current?.focus();
+    }, CLOSE_ANIMATION_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+  }, []);
+
+  // Other page elements (FAQ, Support) can open the chat via a custom event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<OpenChatDetail>).detail;
+      if (detail?.question) {
+        pendingQuestion.current = detail.question;
+        setPendingTick((n) => n + 1);
+      }
+      open();
+    };
+    window.addEventListener(OPEN_CHAT_EVENT, handler);
+    return () => window.removeEventListener(OPEN_CHAT_EVENT, handler);
+  }, [open]);
+
+  // Send a question handed over from elsewhere on the page once the panel is open.
+  useEffect(() => {
+    if (phase !== "open" || !pendingQuestion.current || loading) return;
+    send(pendingQuestion.current);
+    pendingQuestion.current = null;
+  }, [phase, pendingTick, loading, send]);
+
+  useEffect(() => {
+    if (phase !== "open") return;
+    inputRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [phase, close]);
+
+  // Keep the newest message in view.
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, loading, phase]);
+
+  const lastMessage = messages[messages.length - 1];
+  const hasConversation = messages.length > 0;
+
+  return (
+    <>
+      {phase !== "closed" ? (
+        <div
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="chat-title"
+          className={cn(
+            "fixed inset-0 z-50 flex flex-col overflow-hidden bg-band-alt shadow-float",
+            "sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[400px] sm:rounded-xl sm:border sm:border-line",
+            "origin-bottom-right",
+            phase === "closing" ? "animate-chat-out" : "animate-chat-in",
+          )}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 bg-navy px-4 py-3 text-white">
+            <LogoMark className="h-10 w-10 shrink-0 rounded-full ring-2 ring-white/40" title="" />
+            <div className="min-w-0 flex-1">
+              <h2 id="chat-title" className="truncate font-semibold leading-tight">Digi Yatra Assistant</h2>
+              <p className="truncate text-xs text-white/75">
+                <span lang="hi" className="font-devanagari">डिजी यात्रा सहायक</span> ·{" "}
+                {mode === "mock" ? "Dev preview (mock)" : "Answers from approved sources"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              disabled={!hasConversation}
+              aria-label="Clear conversation"
+              title="Clear conversation"
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-40"
+            >
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Close assistant"
+              title="Close (Esc)"
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/15"
+            >
+              <X aria-hidden="true" className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Mode banner — never let a mock pass for real AI */}
+          {mode === "mock" ? (
+            <div role="note" className="flex items-start gap-2 border-b border-warning/30 bg-warning-soft px-4 py-2 text-[0.75rem] leading-snug text-ink">
+              <FlaskConical aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+              <span>
+                <strong className="text-warning">Development mock</strong> — AI backend not connected. Replies are
+                pre-written samples, not AI. Send <code className="rounded bg-surface px-1">{MOCK_ERROR_TRIGGER}</code> to
+                preview errors.
+              </span>
+            </div>
+          ) : null}
+
+          {confirmClear ? (
+            <div role="alertdialog" aria-labelledby="clear-q" className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-4 py-2.5 text-sm">
+              <span id="clear-q" className="text-ink">Clear this conversation?</span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    clear();
+                    setConfirmClear(false);
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded bg-danger px-3 py-1 text-xs font-medium text-white hover:opacity-90"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  className="rounded border border-line px-3 py-1 text-xs font-medium text-ink hover:bg-band"
+                >
+                  Cancel
+                </button>
+              </span>
+            </div>
+          ) : null}
+
+          {/* Conversation log */}
+          <div ref={logRef} role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+            <div className="flex flex-col items-start">
+              <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-line-soft bg-surface px-3.5 py-2.5 text-[0.92rem] leading-relaxed text-ink shadow-card">
+                <p className="font-semibold text-heading">Namaste! Welcome to Digi Yatra.</p>
+                <p className="mt-1">
+                  I can help with registration, the airport journey, supported airports, privacy and troubleshooting. Please
+                  don&apos;t share personal details such as Aadhaar numbers.
+                </p>
+              </div>
+            </div>
+
+            {!hasConversation ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Suggested questions</p>
+                <ul className="flex flex-col gap-2">
+                  {starterQuestions.map((q) => (
+                    <li key={q}>
+                      <button
+                        type="button"
+                        onClick={() => send(q)}
+                        className="w-full rounded-lg border border-brand/40 bg-surface px-3 py-2 text-left text-sm text-brand transition-colors hover:border-brand hover:bg-brand-soft"
+                      >
+                        {q}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                canRetry={m.id === lastMessage?.id && !loading}
+                onRetry={retry}
+                onFeedback={giveFeedback}
+              />
+            ))}
+            {loading ? <TypingIndicator /> : null}
+          </div>
+
+          <ChatComposer ref={inputRef} disabled={loading} onSend={send} />
+        </div>
+      ) : null}
+
+      {/* Launcher */}
+      <button
+        ref={launcherRef}
+        type="button"
+        onClick={phase === "open" ? close : open}
+        aria-expanded={phase === "open"}
+        aria-label={phase === "open" ? "Close Digi Yatra Assistant" : "Open Digi Yatra Assistant"}
+        className={cn(
+          "group fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-navy text-white shadow-float ring-4 ring-white transition-transform hover:scale-105 sm:bottom-6 sm:right-6 [html[data-contrast=high]_&]:ring-[#ffff00]",
+          phase !== "closed" && "max-sm:hidden",
+        )}
+      >
+        {phase === "open" ? <X aria-hidden="true" className="h-7 w-7" /> : <Headset aria-hidden="true" className="h-8 w-8" />}
+        {phase === "closed" ? (
+          <span className="pointer-events-none absolute right-[4.5rem] hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 py-1.5 text-sm font-medium text-brand shadow-card group-hover:flex group-focus-visible:flex">
+            <MessageSquareText aria-hidden="true" className="h-4 w-4" /> Ask Digi Yatra Assistant
+          </span>
+        ) : null}
+      </button>
+    </>
+  );
+}

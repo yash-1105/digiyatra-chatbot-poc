@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# Digi Yatra Chatbot POC — what must NEVER be committed
+# ---------------------------------------------------------------------------
+
+# Secrets (Sarvam key, DB URLs, …). Only the *.env.example templates are tracked.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Private knowledge originals: unapproved drafts, reviewer comments, document metadata.
+# Keep them locally (transfer via SFTP); production uses knowledge/deploy only.
+knowledge/raw/
+# Review artefacts (also contain sanitised records of UNAPPROVED files) — regenerate with `app.cli ingest`.
+knowledge/curated/
+# Retrieval approval does not grant public redistribution rights.
+knowledge/deploy/
+knowledge/approval_manifest.json
+docs/live_eval_report.md
+docs/KNOWLEDGE_INVENTORY.md
+design/dgca-reference.png
+
+# Runtime data: analytics database(s), LanceDB index, feedback — rebuildable / environment-specific.
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sql
+*.dump
+*.backup
+*.pem
+*.key
+*.p12
+*.pfx
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.lance/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Project-local caches, temporary tools, local PostgreSQL test cluster, transfer packages
+.cache/
+transfer/
+.vercel/
+.railway/
+
+# Generated screenshots and logs
+frontend/screenshots/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

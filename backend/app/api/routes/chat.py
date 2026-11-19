@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
+
+from app.api.deps import rate_limited
+from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse, FeedbackRequest
+
+router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+_ERRORS = {
+    413: {"model": ErrorResponse}, 422: {"model": ErrorResponse}, 429: {"model": ErrorResponse},
+    502: {"model": ErrorResponse}, 503: {"model": ErrorResponse}, 504: {"model": ErrorResponse},
+}
+
+
+@router.post("", response_model=ChatResponse, responses=_ERRORS, dependencies=[Depends(rate_limited)])
+async def chat(body: ChatRequest, request: Request) -> ChatResponse:
+    return await request.app.state.chat_service.handle(body)
+
+
+@router.post("/feedback", status_code=204, responses=_ERRORS, dependencies=[Depends(rate_limited)])
+async def feedback(body: FeedbackRequest, request: Request) -> Response:
+    """Explicit "Did this resolve your issue?" feedback. Idempotent: one vote per assistant message;
+    repeated submissions are accepted (204) but never counted twice. Stores no message content."""
+    analytics = request.app.state.analytics
+    if analytics is None:
+        raise HTTPException(503, detail={"code": "database_unavailable", "message": "Feedback is temporarily unavailable."})
+    outcome = await run_in_threadpool(
+        analytics.record_feedback, conversation_id=body.conversation_id, message_id=body.message_id, resolved=body.resolved
+    )
+    if outcome.reason == "unknown_message":
+        raise HTTPException(404, detail={"code": "unknown_message", "message": "This answer can no longer receive feedback."})
+    if outcome.reason == "expired":
+        raise HTTPException(410, detail={"code": "feedback_expired", "message": "Feedback for this answer has expired."})
+    return Response(status_code=204)

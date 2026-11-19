@@ -1,0 +1,21 @@
+[project]
+name = "digiyatra-chatbot-backend"
+version = "0.2.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101", "B008", "S311", "E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: calls the real Sarvam API (requires SARVAM_API_KEY); excluded by default"]
+addopts = "-m 'not live' -q"

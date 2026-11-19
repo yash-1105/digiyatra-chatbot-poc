@@ -1,0 +1,17 @@
+# Build context = repository root. Allow-list: only what backend/Dockerfile copies.
+*
+!backend/requirements.lock
+!backend/alembic.ini
+!backend/migrations/
+!backend/ingestion/
+!backend/app/
+!backend/scripts/start.sh
+!knowledge/deploy/
+# Never, even if re-included above:
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+backend/data/
+knowledge/raw/
+knowledge/curated/
