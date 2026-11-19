@@ -1,5 +1,5 @@
-# Branding authorization
+# Supplied branding assets
 
-Official reference asset located at https://digiyatrafoundation.com/images/logo/digiyatra-white.svg on 19 November 2026. Its availability is not a redistribution license. No official logo has been copied or recreated while authorization is pending.
+The project owner supplied `digiyatra_logo.png` (wordmark) and `chatbot_logo.png` (symbol) from their Downloads folder on 19 November 2026 and explicitly requested their use and deployment. Both PNG files are stored unchanged. The shared LogoMark component uses SVG viewports to omit the surrounding image padding while preserving proportions and colors.
 
-The portal currently uses a plain-text identity. On confirmed authorization, store the original, unmodified official asset here, record permission/provenance, and replace the shared LogoMark presentation. Do not download unrelated photographs or use screenshots of the official app as if they were this assistant.
+This records owner-supplied provenance and instructions, not an independently verified trademark license. The portal's independent-information notice remains visible; use of these assets does not imply Foundation endorsement.
