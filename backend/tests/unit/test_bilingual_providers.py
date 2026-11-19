@@ -232,3 +232,15 @@ def test_credit_exhaustion_is_safe_unavailability_without_switching(app_factory,
         c.app.state.providers['anthropic'] = AnthropicChatClient('fake', transport=httpx.MockTransport(handler))
         r = ask(c, 'What is an OTP?', provider='anthropic')
         assert r.status_code == 503 and 'credit balance' not in r.text and not fake_sarvam.requests
+
+
+def test_hindi_storage_paraphrase_keeps_meaningful_unknowns_and_citations():
+    r = ground_answer('आपका डेटा आपके स्मार्टफ़ोन पर स्थानीय रूप से संग्रहित होता है [1]।', {1:0},
+                      ['Your data is stored locally on your smartphone.'])
+    assert r.dropped == 0 and r.cited_hits == [0]
+
+
+def test_hindi_platform_availability_keeps_direct_answer():
+    r = ground_answer('डिजी यात्रा Android और iOS दोनों पर उपलब्ध है [1]।', {1:0},
+                      ['Digi Yatra is available on Android and iOS.'])
+    assert r.dropped == 0

@@ -115,6 +115,9 @@ def intent_match(intent: str | None, chunk: dict) -> float:
 _EQUIVALENTS = {
     "iphone": "ios",
     "lit": "lighting",
+    "locally": "local",
+    "securely": "secure",
+    "permanently": "permanent",
     "illuminated": "lighting",
     "ipad": "ios",
     "android": "android",
