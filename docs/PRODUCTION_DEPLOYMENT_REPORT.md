@@ -19,6 +19,8 @@ The public GitHub repository, Railway backend/PostgreSQL and Vercel frontend exi
 | Railway PostgreSQL service | `Postgres`, ID `46a36660-0cf7-4566-9477-7993cf507400` |
 | Railway environment | `production`, ID `5ff97f70-d9b6-4e31-9513-75ae59a9eda6` |
 | Vercel project | `digiyatra-chatbot-poc`, ID `prj_YVLqq1gMcMF2jlt2n8SGvmvicvFS` |
+| Verified backend deployment | `5303d2ce-4b8c-419d-84f9-e932d9373882`, Railway status SUCCESS |
+| Verified frontend deployment | `dpl_4JFHNiDC74pRgJj7ZYLCSngqX5AG`, Vercel status READY |
 
 ## Architecture and deployment
 
@@ -39,7 +41,7 @@ Railway initially selected Railpack despite the transferred configuration. The s
 
 ## Security and publication
 
-- Public source and frontend publication were explicitly approved by the owner. The exact initial staged set was scanned before publishing. The only Sarvam-key-shaped source string was the explicitly synthetic test key; example database URLs were reviewed as placeholders. No actual credentials were found in those checks.
+- Public source and frontend publication were explicitly approved by the owner. The exact initial staged set was scanned before publishing. The final 171-file index was also scanned against all four actual generated deployment-secret values without printing them; no matches or forbidden paths were found. The only Sarvam-key-shaped source string was the explicitly synthetic test key; example database URLs were reviewed as placeholders. No actual credentials were found in those checks.
 - Git tracks no `knowledge/` files and no credential-bearing environment files. The retrieval corpus, raw documents, review artifacts, manifest, inventory, evaluation report, reference screenshot, databases, logs, caches, virtual environments, transfer archives, SSH private key and local deployment metadata remain excluded. Only example environment configurations are published.
 - Retrieval approval is POC curation, not public redistribution permission. The private corpus contains 119 chunks from 26 documents, with a matching SHA-256. Content-owner sign-off remains **PENDING**. The international-trial draft remains excluded; no ingestion or corpus modification occurred.
 - Railway received a separate authenticated private upload of `.cache/railway-context`. It contains 61 allow-listed runtime/build/corpus files, with a local SHA-256 inventory. It was not published on GitHub or in a public container registry. GitHub-only backend deployment must not be enabled while the corpus remains private.
@@ -54,7 +56,7 @@ Railway initially selected Railpack despite the transferred configuration. The s
 
 | Check | Observed result |
 |---|---|
-| Backend offline tests after staging-cookie fix | **196 passed**, 15 live tests deselected |
+| Backend offline tests after all deployment fixes | **196 passed**, 15 live tests deselected |
 | Backend Ruff and dependency consistency | Passed during preflight; Ruff passes after staging changes |
 | Frontend production build, types and lint | Passed locally and on Vercel |
 | Docker build on Railway | Passed using `backend/Dockerfile` |
@@ -75,6 +77,7 @@ Railway initially selected Railpack despite the transferred configuration. The s
 | Repeated identical feedback | HTTP 204; DB had exactly two feedback rows for the two initial answered smoke questions |
 | Request-size limit | HTTP 413 for a 17000-byte request |
 | Throttling with changing forged forwarded headers | Passed: the final 21-request greeting probe returned 10 HTTP 200 and 11 HTTP 429 responses, after earlier smoke requests consumed part of the 20/60s allowance |
+| Combined forged X-Forwarded-For, platform-client-IP and signature headers | Final 21 valid requests returned exactly 20 HTTP 200 and one HTTP 429; spoofing did not evade the limit |
 | Staging cookie security | Live response confirms HttpOnly, Secure and SameSite=Strict; no internal client-IP signature in the response |
 | HTTPS headers | HSTS, nosniff, DENY framing, referrer policy and noindex observed on Vercel |
 | Responsive browser layout | Desktop 1440px, tablet 820px and mobile 390px: HTTP 200, zero horizontal overflow, chat opens, no page errors |
