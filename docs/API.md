@@ -15,7 +15,8 @@ Request (unknown fields are rejected):
   "message": "How do I register for Digi Yatra?",
   "conversation_id": "a1b2c3d4-...",
   "history": [{"role": "user", "content": "..."}],
-  "locale": "en"
+  "locale": "en",
+  "provider": "sarvam"
 }
 ```
 
@@ -24,7 +25,8 @@ Request (unknown fields are rejected):
 | `message` | 1–1000 characters; must not be blank |
 | `conversation_id` | 8–64 characters from `[A-Za-z0-9_-]` |
 | `history` | Optional, at most 20 items. The server keeps its own conversation memory. Client history is used only to recover *user* turns after a restart; client-supplied assistant turns are never trusted. |
-| `locale` | `en` or `hi` |
+| `locale` | `en` (default) or `hi`; controls answer language independently of question language |
+| `provider` | `sarvam` (default, `sarvam-105b`) or `anthropic` (`claude-haiku-5-5`). Other names/model parameters are rejected. No paid-provider fallback. |
 
 Response `200`:
 
@@ -35,6 +37,9 @@ Response `200`:
   "answer": "Download the official app and register with your Aadhaar-linked mobile number [1]…",
   "status": "answered",
   "answer_mode": "knowledge",
+  "provider": "sarvam",
+  "locale": "en",
+  "cached": false,
   "sources": [
     {"id": 1, "title": "Digi Yatra Registration Guide — Steps for Registration",
      "source_file": "registration_details.md", "section": "Digi Yatra Registration Guide > Steps for Registration",
@@ -199,3 +204,16 @@ Backend variables are listed in `backend/.env.example`, and frontend variables i
 - **`LexicalEmbedder`:** deterministic hashed TF-IDF over unigrams and bigrams (4096 dimensions, L2-normalised). This is **lexical, not semantic**. It is always combined with BM25 keyword ranking.
 
 The index stores which embedder built it, and queries always use the same one. To migrate, set `EMBEDDING_PROVIDER` and run `python -m app.cli reindex`.
+
+
+## Bilingual providers and cost accounting
+
+Both providers use the same approved LanceDB retrieval, evidence selection, citations, input/output guards and session-independent public rate limit. Hindi and Hinglish retrieval use bounded concept normalization, not a paid translation service. Responses honor `locale` even when the question/history uses another language. Source passages remain in their original language.
+
+RAG uses complete approved chunks within configurable context/history budgets; it does not delete words or relax approval. The input token budget is an estimate with an additional UTF-8 byte ceiling, not an exact provider tokenizer count. Output limits are enforced by each provider's `max_tokens`. Anthropic also has a separate per-client rate limit. The anonymous client identity is the existing signed proxy IP, not a user-supplied conversation ID.
+
+The protected analytics response now includes `ai_usage`: per-provider requests, errors, local FAQ cache hits, provider input/output/cache tokens, clearly estimated USD costs, average tokens/cost, and daily trends. Provider-reported token values are used when returned; missing values are flagged. Accounting is one row per provider call (including citation repairs), not necessarily one per chatbot answer. Known authentication/credit rejection before inference contributes zero inferred tokens/cost; other failed calls can have unreported usage. No prompts, responses, IPs or conversation identifiers enter the `ai_usage` table.
+
+Costs use configurable reference prices and an explicit `USD_INR_ESTIMATE` for Sarvam, not a live exchange rate or invoice. Current defaults are documented in `backend/.env.example`; confirm account-specific billing eligibility separately. These application estimates do not modify Railway or AI-provider billing settings.
+
+Only exact allow-listed non-personal FAQ queries in fresh conversations can use the bounded answer cache. Keys include provider, language and the approved corpus revision. Follow-ups, personal information, conflicts, time-sensitive notices, errors and refusals bypass it. A hit still creates a normal interaction record for feedback but uses no model call. Anthropic caches only stable system instructions when sufficiently long; passenger messages are not in that shared prefix.

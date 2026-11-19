@@ -340,6 +340,20 @@ function RecentTable({ rows }: { rows: AnalyticsReport["recent"] }) {
   );
 }
 
+function AIUsagePanel({ usage }: { usage: NonNullable<AnalyticsReport["ai_usage"]> }) {
+  const money = (value: number) => `$${value.toFixed(6)}`;
+  return <Panel title="AI Usage & Costs" icon={BarChart3}>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {usage.providers.map((p) => <div key={p.provider}><p className="text-sm text-ink-muted">{p.provider === "sarvam" ? "Sarvam requests" : "Anthropic requests"}</p><p className="text-2xl font-semibold text-heading">{nf.format(p.requests)}</p><p className="text-xs text-ink-soft">{p.model} · {p.cache_hits} FAQ cache hits · {p.errors} errors</p></div>)}
+      <div><p className="text-sm text-ink-muted">Total estimated AI cost</p><p className="text-2xl font-semibold text-heading">{money(usage.total_estimated_usd)}</p></div>
+      <div><p className="text-sm text-ink-muted">Average cost per AI response</p><p className="text-2xl font-semibold text-heading">{money(usage.average_usd)}</p></div>
+    </div>
+    <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs" aria-label="AI token usage by provider"><thead><tr>{["Provider", "Input tokens", "Output tokens", "Cache read / write", "Average tokens", "Estimated USD"].map(h => <th key={h} className="border-b border-line px-2 py-2 font-semibold text-heading">{h}</th>)}</tr></thead><tbody>{usage.providers.map(p => <tr key={p.provider}><td className="px-2 py-2">{p.provider}</td><td>{nf.format(p.input_tokens)}</td><td>{nf.format(p.output_tokens)}</td><td>{nf.format(p.cache_read_tokens)} / {nf.format(p.cache_write_tokens)}</td><td>{Math.round(p.average_tokens)}</td><td>{money(p.estimated_usd)}</td></tr>)}</tbody></table></div>
+    <details className="mt-4 text-sm"><summary className="cursor-pointer text-brand">Token usage trends</summary><div className="mt-2 max-h-60 overflow-auto"><table className="w-full text-left text-xs" aria-label="Daily AI token usage"><thead><tr><th>Date</th><th>Input tokens</th><th>Output tokens</th><th>Estimated USD</th></tr></thead><tbody>{usage.daily.map(d => <tr key={d.date}><td className="py-1">{d.date}</td><td>{nf.format(d.input_tokens)}</td><td>{nf.format(d.output_tokens)}</td><td>{money(d.estimated_usd)}</td></tr>)}</tbody></table></div></details>
+    <p className="mt-3 text-xs text-ink-soft">{usage.note} Token counts missing from the provider are estimates.</p>
+  </Panel>;
+}
+
 /* ---------------------------------------------------------------- the view */
 
 export function DashboardView() {
@@ -459,6 +473,8 @@ export function DashboardView() {
               <MetricCard key={c.label} {...c} />
             ))}
           </div>
+
+          {data.ai_usage ? <AIUsagePanel usage={data.ai_usage} /> : null}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel title="Most frequently asked topics" icon={BarChart3}>

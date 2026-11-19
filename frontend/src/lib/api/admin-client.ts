@@ -4,7 +4,15 @@ import { publicConfig } from "@/lib/config";
 export type RangeDays = 7 | 30;
 export type ResolutionStatus = "resolved" | "unresolved" | "unconfirmed";
 
+export interface AIUsageReport {
+  providers: { provider: string; model: string; requests: number; cache_hits: number; errors: number;
+    input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_tokens: number;
+    estimated_usd: number; average_tokens: number; average_usd: number; estimated_token_requests: number }[];
+  daily: { date: string; input_tokens: number; output_tokens: number; estimated_usd: number }[];
+  total_estimated_usd: number; average_usd: number; note: string; costs_are_estimates: boolean;
+}
 export interface AnalyticsReport {
+  ai_usage?: AIUsageReport;
   range: { days: number; start: string; end: string };
   totals: { conversations: number; questions: number };
   resolution: {

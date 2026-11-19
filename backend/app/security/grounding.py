@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass, field
 
 from app.rag.embeddings import tokenize
+from app.rag.multilingual import concepts
 from app.rag.query import evidence_tokens
 
 KEEP_SUPPORT = 0.4  # min share of a sentence's content words found in a cited source
@@ -50,7 +51,7 @@ _DECLINE = re.compile(
 )
 _MARKER = re.compile(r"\[(\d+)\]")
 _NUMBER = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)?(?![\w.])")
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=\S)")
+_SENTENCE_END = re.compile(r"(?<=[.!?।])\s+(?=\S)")
 _LIST_PREFIX = re.compile(r"^\s*(?:\d+[.)]|[-*•])\s+")
 
 
@@ -101,7 +102,7 @@ def _support(words: set[str], evidence_tokens: set[str]) -> float:
 
 
 def _numbers_ok(sentence: str, evidence_texts: list[str]) -> bool:
-    nums = {n.replace(",", "") for n in _NUMBER.findall(_MARKER.sub(" ", sentence))}
+    nums = {n.replace(",", "") for n in _NUMBER.findall(_MARKER.sub(" ", concepts(sentence)))}
     if not nums:
         return True
     pool = " ".join(evidence_texts).replace(",", "")
@@ -117,16 +118,17 @@ def _polarity_ok(sentence: str, evidence: str) -> bool:
     if _DECLINE.match(sentence):
         return True
     answer = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", evidence, flags=re.S).lower()
-    claim = sentence.lower().replace("’", "'")
+    claim = concepts(sentence).lower().replace("’", "'")
     # A required platform, identity provider, format or technology must actually
     # occur in the evidence. Other overlapping words cannot establish its policy.
     anchors = evidence_tokens("NFC OTP QR Android iOS iPhone DigiLocker Aadhaar PDF JPEG PNG lounge payment")
     if (evidence_tokens(claim) & anchors) - evidence_tokens(answer):
         return False
-    if "aadhaar" in claim and re.search(r"\b(register|registration|create)\b", claim):
+    if "aadhaar" in claim:
         required = bool(re.search(r"\b(mandatory|required|necessary)\b", answer))
-        bypass = bool(re.search(r"\b(can|may)\b.*\bwithout\b|\bnot (?:mandatory|required|necessary)\b", claim))
-        if required and bypass:
+        denied = bool(re.search(r"\bnot (?:mandatory|required|necessary)\b|\b(?:mandatory|required|necessary) not\b", claim))
+        bypass = "without" in claim and bool(re.search(r"\b(can|may)\b", claim)) and not re.search(r"\b(not|cannot|can't)\b", claim)
+        if required and (denied or bypass):
             return False
     if re.search(r"\b(centrally|central(?:ized|ised)?|central server)\b", claim) and re.search(
         r"\b(stor\w*|sav\w*)\b", claim
@@ -191,7 +193,7 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
                 res.cited_hits.append(h)
         marks = "".join(f"[{res.cited_hits.index(h) + 1}]" for h in sorted(keep, key=res.cited_hits.index))
         if marks:
-            m = re.match(r"^(.*?)([.!?]*)$", body, re.S)
+            m = re.match(r"^(.*?)([.!?।]*)$", body, re.S)
             body = f"{m.group(1)} {marks}{m.group(2)}" if m else f"{body} {marks}"
         pieces.append(prefix + body + " ")
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
+import { useChatText } from "./chat-language";
 import type { FeedbackState } from "./useChat";
 
 interface Props {
@@ -10,26 +11,27 @@ interface Props {
 }
 
 export function FeedbackControls({ state, onFeedback }: Props) {
+  const t = useChatText();
   if (state === "yes") {
-    return <p className="mt-2 text-xs text-success" role="status">Thank you for your feedback.</p>;
+    return <p className="mt-2 text-xs text-success" role="status">{t.thanks}</p>;
   }
   if (state === "no") {
     return (
       <div className="mt-2 rounded bg-band p-2.5 text-xs leading-relaxed text-ink" role="status">
-        <p className="font-semibold text-heading">Sorry this didn&apos;t resolve your issue. You can:</p>
+        <p className="font-semibold text-heading">{t.unresolved}</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-4 text-ink-muted">
-          <li>Rephrase your question or ask about one specific step.</li>
+          <li>{t.rephrase}</li>
           <li>
-            Email customer care at{" "}
+            {t.email}{" "}
             <a href="mailto:customercare@digiyatrafoundation.com" className="text-brand underline">
               customercare@digiyatrafoundation.com
             </a>{" "}
-            with your device model and app version. Never share Aadhaar numbers or OTPs.
+            {t.device}
           </li>
-          <li>For problems at an airport gate, ask the airport staff on site.</li>
+          <li>{t.gate}</li>
         </ul>
         <Link href="/#support" className="mt-1 inline-block text-brand underline">
-          Support &amp; Contact information
+          {t.support}
         </Link>
       </div>
     );
@@ -40,15 +42,15 @@ export function FeedbackControls({ state, onFeedback }: Props) {
     "inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-ink-muted hover:border-brand hover:text-brand disabled:opacity-50";
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Did this resolve your issue?">
-      <span className="text-ink-soft">Did this resolve your issue?</span>
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" role="group" aria-label={t.resolved}>
+      <span className="text-ink-soft">{t.resolved}</span>
       <button type="button" className={btn} disabled={busy} onClick={() => onFeedback(true)}>
-        <ThumbsUp aria-hidden="true" className="h-3.5 w-3.5" /> Yes
+        <ThumbsUp aria-hidden="true" className="h-3.5 w-3.5" /> {t.yes}
       </button>
       <button type="button" className={btn} disabled={busy} onClick={() => onFeedback(false)}>
-        <ThumbsDown aria-hidden="true" className="h-3.5 w-3.5" /> No
+        <ThumbsDown aria-hidden="true" className="h-3.5 w-3.5" /> {t.no}
       </button>
-      {state === "failed" ? <span className="text-danger" role="alert">Couldn&apos;t send — please try again.</span> : null}
+      {state === "failed" ? <span className="text-danger" role="alert">{t.feedbackError}</span> : null}
     </div>
   );
 }

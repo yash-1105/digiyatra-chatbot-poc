@@ -5,6 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import rate_limited
 from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse, FeedbackRequest
+from app.security.rate_limit import client_key
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -16,7 +17,13 @@ _ERRORS = {
 
 @router.post("", response_model=ChatResponse, responses=_ERRORS, dependencies=[Depends(rate_limited)])
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
-    return await request.app.state.chat_service.handle(body)
+    st = request.app.state
+    if body.provider == "anthropic":
+        key = client_key(request, st.settings.trusted_proxies, st.settings.trusted_proxy_hops)
+        allowed, wait = st.anthropic_rate_limiter.check(key)
+        if not allowed:
+            raise HTTPException(429, detail={"code": "rate_limited", "message": "Please wait before using this provider again."}, headers={"Retry-After": str(wait)})
+    return await st.chat_service.handle(body)
 
 
 @router.post("/feedback", status_code=204, responses=_ERRORS, dependencies=[Depends(rate_limited)])

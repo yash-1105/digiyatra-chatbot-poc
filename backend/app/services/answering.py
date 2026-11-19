@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from app.rag.query import normalize_query
+
 _GENERAL_TOPICS = {
     "android": r"android(?: operating system)?",
     "otp": r"(?:otp|one[- ]time password)",
@@ -15,7 +17,7 @@ _GENERAL_TOPICS = {
 
 def general_topic(question: str) -> str | None:
     """Full-question allow-list: a definition plus a policy question is NOT general mode."""
-    q = question.lower().replace("’", "'").strip().rstrip("?.! ")
+    q = normalize_query(question).replace("’", "'").strip().rstrip("?.! ")
     q = re.sub(r"^(?:please\s+)", "", q)
     for topic, name in _GENERAL_TOPICS.items():
         subject = rf"(?:an? |the )?{name}"
@@ -32,7 +34,7 @@ def general_topic(question: str) -> str | None:
 
 def restricted_request(question: str) -> str | None:
     """Claims requiring live/account access or unapproved policies never use pretrained knowledge."""
-    q = question.lower()
+    q = normalize_query(question)
     if re.search(r"\b(international|abroad|overseas|e-?passport|dy-?ipt)\b", q):
         return (
             "I can't verify current international availability or eligibility, or confirm an international trial. "

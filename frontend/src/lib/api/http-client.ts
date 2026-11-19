@@ -102,6 +102,7 @@ export class HttpChatClient implements ChatClient {
         conversation_id: request.conversationId,
         history: request.history,
         locale: request.locale,
+        provider: request.provider ?? "sarvam",
       },
       signal,
     );

@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.routes import admin, chat, health
+from app.clients.anthropic import AnthropicChatClient
 from app.clients.sarvam import SarvamChatClient
 from app.config import Settings, get_settings
 from app.db.session import Database
@@ -26,6 +27,7 @@ from app.services.analytics import AnalyticsService
 from app.services.auth import AuthService, LoginThrottle
 from app.services.chat_service import AssistantUnavailable, ChatDeps, ChatService
 from app.services.conversation import ConversationStore
+from app.services.usage import UsageService
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +64,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
-        await app.state.llm.aclose()
+        for client in app.state.providers.values():
+            await client.aclose()
         app.state.db.engine.dispose()
 
     app = FastAPI(
@@ -86,6 +89,11 @@ def create_app(
         temperature=settings.sarvam_temperature,
         reasoning_effort=settings.sarvam_reasoning_effort,
     )
+    app.state.providers = {"sarvam": app.state.llm, "anthropic": AnthropicChatClient(
+        settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
+        max_tokens=settings.anthropic_max_tokens, timeout_s=settings.anthropic_timeout_s,
+        prompt_cache=settings.anthropic_prompt_cache)}
+    app.state.anthropic_rate_limiter = RateLimiter(settings.anthropic_rate_limit_requests, settings.rate_limit_window_s)
     # Database (analytics + admin). The schema is created by Alembic (`python -m app.cli db-upgrade`),
     # never implicitly at startup.
     app.state.db = Database(settings.database_url)
@@ -93,6 +101,7 @@ def create_app(
     if not migrated:
         log.error("Database schema missing: run `python -m app.cli db-upgrade`. Analytics and admin are disabled.")
     app.state.analytics = AnalyticsService(app.state.db) if migrated else None
+    app.state.ai_usage = UsageService(app.state.db, settings) if migrated else None
     app.state.auth = (
         AuthService(app.state.db, settings.admin_session_ttl_minutes, settings.admin_session_idle_minutes)
         if migrated else None
@@ -110,7 +119,7 @@ def create_app(
         app.state.retriever = retriever
         app.state.chat_service = ChatService(
             ChatDeps(settings, retriever, app.state.llm, ConversationStore(), _conflict_guidance(settings),
-                     analytics=app.state.analytics)
+                     analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage)
         )
         log.info("Knowledge index loaded: %d approved chunks", retriever.chunk_count)
     except (IndexNotBuilt, RuntimeError) as exc:

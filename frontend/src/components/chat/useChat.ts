@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatApiError, getChatClient, type AnswerStatus, type ChatSource } from "@/lib/api";
-import { usePreferences } from "@/lib/accessibility/preferences";
+import type { Locale } from "@/lib/i18n/dictionary";
+import type { AIProvider } from "@/lib/api";
 
 export const MAX_MESSAGE_LENGTH = 1000;
 const STORAGE_KEY = "dy-poc-chat";
-const HISTORY_LIMIT = 10;
+const HISTORY_LIMIT = 4;
 
 export type FeedbackState = "none" | "sending" | "yes" | "no" | "failed";
 
@@ -28,6 +29,8 @@ export interface UiMessage {
 interface StoredChat {
   conversationId: string;
   messages: UiMessage[];
+  locale?: Locale;
+  provider?: AIProvider;
 }
 
 function newId(): string {
@@ -53,7 +56,8 @@ function loadStored(): StoredChat | null {
  * ChatClient abstraction, so switching mock → FastAPI needs no UI change.
  */
 export function useChat() {
-  const { locale } = usePreferences();
+  const [locale, setLocale] = useState<Locale>("en");
+  const [provider, setProvider] = useState<AIProvider>("sarvam");
   const client = getChatClient();
   const [conversationId, setConversationId] = useState<string>("");
   const [messages, setMessages] = useState<UiMessage[]>([]);
@@ -65,6 +69,8 @@ export function useChat() {
     const stored = loadStored();
     setConversationId(stored?.conversationId ?? newId());
     setMessages(stored?.messages ?? []);
+    setLocale(stored?.locale === "hi" ? "hi" : "en");
+    setProvider(stored?.provider === "anthropic" ? "anthropic" : "sarvam");
     hydrated.current = true;
     return () => abortRef.current?.abort();
   }, []);
@@ -72,11 +78,11 @@ export function useChat() {
   useEffect(() => {
     if (!hydrated.current || !conversationId) return;
     try {
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ conversationId, messages } satisfies StoredChat));
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ conversationId, messages, locale, provider } satisfies StoredChat));
     } catch {
       /* storage unavailable — conversation simply won't survive a reload */
     }
-  }, [conversationId, messages]);
+  }, [conversationId, messages, locale, provider]);
 
   const request = useCallback(
     async (userMessage: UiMessage, priorMessages: UiMessage[]) => {
@@ -86,13 +92,13 @@ export function useChat() {
       setLoading(true);
 
       const history = priorMessages
-        .filter((m) => !m.error)
+        .filter((m) => !m.error && m.role === "user")
         .slice(-HISTORY_LIMIT)
         .map((m) => ({ role: m.role, content: m.content }));
 
       try {
         const res = await client.sendMessage(
-          { message: userMessage.content, conversationId, history, locale },
+          { message: userMessage.content, conversationId, history, locale, provider },
           controller.signal,
         );
         setMessages((prev) => [
@@ -115,7 +121,7 @@ export function useChat() {
           err instanceof ChatApiError ? err : new ChatApiError("Something went wrong. Please try again.", "server");
         if (apiErr.kind === "aborted") return;
         setMessages((prev) =>
-          prev.map((m) => (m.id === userMessage.id ? { ...m, error: { message: apiErr.message, retryable: apiErr.retryable } } : m)),
+          prev.map((m) => (m.id === userMessage.id ? { ...m, error: { message: locale === "hi" ? "चुने गए AI प्रदाता से जवाब नहीं मिला। कृपया फिर प्रयास करें।" : apiErr.message, retryable: apiErr.retryable } } : m)),
         );
       } finally {
         if (abortRef.current === controller) {
@@ -124,7 +130,7 @@ export function useChat() {
         }
       }
     },
-    [client, conversationId, locale],
+    [client, conversationId, locale, provider],
   );
 
   const send = useCallback(
@@ -175,5 +181,5 @@ export function useChat() {
     setConversationId(newId());
   }, []);
 
-  return { messages, loading, send, retry, giveFeedback, clear, mode: client.mode };
+  return { messages, loading, send, retry, giveFeedback, clear, mode: client.mode, locale, setLocale, provider, setProvider };
 }

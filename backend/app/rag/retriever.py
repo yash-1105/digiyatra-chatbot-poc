@@ -3,6 +3,8 @@ approval filtering, duplicate suppression, per-source caps and score thresholds.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from collections import Counter
@@ -161,6 +163,7 @@ class Retriever:
     def reload(self) -> None:
         self._chunks = self.index.all_chunks(approved_only=True)
         self._by_id = {c["chunk_id"]: c for c in self._chunks}
+        self.corpus_revision = hashlib.sha256(json.dumps(self._chunks, sort_keys=True, default=str).encode()).hexdigest()
         # URLs and file paths otherwise drown out the short FAQ / store-listing text.
         self._tokens = [tokenize(normalize_query(re.sub(r"https?://\S+", " ", c["embed_text"]))) for c in self._chunks]
         self._bm25 = BM25(self._tokens)

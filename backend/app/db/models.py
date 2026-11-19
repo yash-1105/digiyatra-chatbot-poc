@@ -106,3 +106,20 @@ class ResolutionFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     __table_args__ = (UniqueConstraint("message_id", name="uq_feedback_message"),)
+
+
+class AIUsage(Base):
+    """Provider accounting only: no prompts, answers, IPs, passenger or conversation IDs."""
+    __tablename__ = 'ai_usage'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(12), nullable=False)
+    model: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    tokens_estimated: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    estimated_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)

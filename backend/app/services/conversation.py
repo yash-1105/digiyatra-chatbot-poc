@@ -12,6 +12,8 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
+from app.rag.query import INTENT_TERMS, query_intent
+
 
 @dataclass
 class Turn:
@@ -22,6 +24,7 @@ class Turn:
 @dataclass
 class Conversation:
     turns: list[Turn] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
     touched: float = field(default_factory=time.monotonic)
 
 
@@ -46,10 +49,21 @@ class ConversationStore:
             conv = self._data.get(conversation_id)
             return list(conv.turns) if conv else None
 
+    def summary(self, conversation_id: str) -> str:
+        """Rolling topic summary only: no model call, personal text or assistant claims."""
+        with self._lock:
+            self._evict()
+            conv = self._data.get(conversation_id)
+            return "; ".join(INTENT_TERMS[t] for t in conv.topics[-4:]) if conv else ""
+
     def append(self, conversation_id: str, user: str, assistant: str) -> None:
         with self._lock:
             conv = self._data.setdefault(conversation_id, Conversation())
             conv.turns += [Turn("user", user), Turn("assistant", assistant)]
+            for turn in conv.turns[:-self.max_turns]:
+                if turn.role == "user" and (topic := query_intent(turn.content)):
+                    conv.topics = [t for t in conv.topics if t != topic] + [topic]
+            conv.topics = conv.topics[-4:]
             conv.turns = conv.turns[-self.max_turns :]
             conv.touched = time.monotonic()
             self._data.move_to_end(conversation_id)

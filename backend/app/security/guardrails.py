@@ -84,7 +84,8 @@ class InputAssessment:
 
 
 def detect_injection(text: str) -> bool:
-    return any(p.search(text) for p in _INJECTION)
+    return any(p.search(text) for p in _INJECTION) or bool(re.search(r"(?i)\b(rules|instructions)\b.{0,50}\bignore\b", text)) or bool(re.search(
+        r"(नियम|निर्देश).{0,35}(अनदेखा|ignore)|(?:अनदेखा|ignore).{0,35}(नियम|निर्देश)|(?:कुंजी|पासवर्ड|प्रॉम्प्ट).{0,25}(दिखाओ|बताओ|उजागर)", text))
 
 
 def detect_and_redact_pii(text: str) -> tuple[str, list[str]]:
@@ -100,15 +101,20 @@ def detect_and_redact_pii(text: str) -> tuple[str, list[str]]:
 
 
 def assess_input(text: str) -> InputAssessment:
-    redacted, pii = detect_and_redact_pii(text)
+    from app.rag.multilingual import concepts, digits, normalize_question
+    normalized = normalize_question(text)
+    redacted, pii = detect_and_redact_pii(digits(text))
+    translated, translated_pii = detect_and_redact_pii(concepts(text))
+    if set(translated_pii) - set(pii):
+        redacted, pii = translated, sorted(set(pii) | set(translated_pii))
     return InputAssessment(
         redacted_text=redacted,
         pii_types=pii,
-        injection=detect_injection(text),
-        greeting=bool(_GREETING.match(text)),
-        live_status=bool(_LIVE_STATUS.search(text)),
-        action_request=bool(_ACTION_REQUEST.search(text)),
-        domain_related=bool(DOMAIN_TERMS.search(text)),
+        injection=detect_injection(normalized),
+        greeting=bool(_GREETING.match(normalized)),
+        live_status=bool(_LIVE_STATUS.search(normalized)),
+        action_request=bool(_ACTION_REQUEST.search(normalized)),
+        domain_related=bool(DOMAIN_TERMS.search(normalized)),
     )
 
 
@@ -151,7 +157,10 @@ class OutputCheck:
 
 
 def strip_fabricated_actions(text: str) -> tuple[str, int]:
+    hindi_action = re.compile(r"[^।.\n]*(?:(?:मैंने|हमने).{0,50}(?:शिकायत|टिकट|मामला).{0,25}(?:दर्ज|भेज)|(?:शिकायत|टिकट).{0,25}(?:दर्ज कर दी|भेज दी|दर्ज हो गई))[^।.\n]*[।.\n]?")
+    text, hi_n = hindi_action.subn("", text)
     new, n = _FABRICATED_ACTION.subn("", text)
+    n += hi_n
     return re.sub(r"[ \t]{2,}", " ", new).strip(), n
 
 

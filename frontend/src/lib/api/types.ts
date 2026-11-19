@@ -7,6 +7,8 @@
  *
  * JSON bodies use snake_case on the wire; see http-client.ts for mapping.
  */
+export type AIProvider = "sarvam" | "anthropic";
+
 export type ChatRole = "user" | "assistant";
 
 export interface ChatSource {
@@ -30,6 +32,7 @@ export interface ChatRequest {
   conversationId: string;
   history: ChatHistoryItem[];
   locale: "en" | "hi";
+  provider?: AIProvider;
 }
 
 export type AnswerStatus =

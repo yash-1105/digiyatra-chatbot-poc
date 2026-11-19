@@ -98,4 +98,6 @@ async def analytics(
 ) -> dict:
     if days not in ALLOWED_DAYS:
         raise _err(422, "validation_error", "days must be 7 or 30.")
-    return await run_in_threadpool(request.app.state.analytics.report, days)
+    report = await run_in_threadpool(request.app.state.analytics.report, days)
+    report["ai_usage"] = await run_in_threadpool(request.app.state.ai_usage.report, days)
+    return report

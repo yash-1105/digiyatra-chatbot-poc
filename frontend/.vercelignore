@@ -1,0 +1,8 @@
+# Deployment uses configured Vercel variables; never upload local credential files.
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+screenshots/
+*.log

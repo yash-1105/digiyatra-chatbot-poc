@@ -13,32 +13,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
-from typing import Literal
 
 import httpx
 
+from app.clients.base import ChatResult, ErrorKind
+from app.clients.base import ProviderError as SarvamError
+
 log = logging.getLogger(__name__)
 
-ErrorKind = Literal["not_configured", "auth", "quota", "rate_limited", "bad_request", "unavailable", "timeout", "empty"]
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
-
-
-class SarvamError(RuntimeError):
-    def __init__(self, kind: ErrorKind, status: int | None = None, request_id: str | None = None) -> None:
-        super().__init__(f"Sarvam API error: {kind}" + (f" (HTTP {status})" if status else ""))
-        self.kind = kind
-        self.status = status
-        self.request_id = request_id
-
-
-@dataclass
-class ChatResult:
-    content: str
-    finish_reason: str | None
-    model: str
-    usage: dict = field(default_factory=dict)
-    request_id: str | None = None
 
 
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
@@ -161,6 +144,7 @@ class SarvamChatClient:
         return "unavailable"
 
     def _parse(self, resp: httpx.Response) -> ChatResult:
+        data = {}
         try:
             data = resp.json()
             choice = data["choices"][0]
@@ -169,7 +153,7 @@ class SarvamChatClient:
             raise SarvamError("empty", resp.status_code) from None
         content = _THINK.sub("", content).strip()
         if not content:
-            raise SarvamError("empty", resp.status_code)
+            raise SarvamError("empty", resp.status_code, usage=data.get("usage") or {})
         return ChatResult(
             content=content,
             finish_reason=choice.get("finish_reason"),

@@ -22,15 +22,37 @@ class Settings(BaseSettings):
     # --- Sarvam ---------------------------------------------------------
     sarvam_api_key: SecretStr | None = Field(default=None, alias="SARVAM_API_KEY")
     sarvam_base_url: str = "https://api.sarvam.ai"
-    sarvam_chat_model: str = "sarvam-105b"
+    sarvam_chat_model: Literal["sarvam-105b"] = "sarvam-105b"
     sarvam_embedding_model: str = "embeddinggemma-2"
     sarvam_timeout_s: float = 35.0
     sarvam_max_retries: int = 2
     # sarvam-105b counts reasoning tokens in max_tokens; with reasoning enabled it can exhaust
     # the budget and return empty content (observed live), so reasoning is off by default.
-    sarvam_max_tokens: int = 1200
+    sarvam_max_tokens: int = Field(default=900, ge=128, le=4096)
     sarvam_temperature: float = 0.2
     sarvam_reasoning_effort: Literal["none", "low", "medium", "high"] | None = "none"
+
+    # --- Anthropic / inference budgets ----------------------------------
+    anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    anthropic_chat_model: Literal["claude-haiku-5-5"] = "claude-haiku-5-5"
+    anthropic_max_tokens: int = Field(default=900, ge=128, le=4096)
+    anthropic_timeout_s: float = 45.0
+    anthropic_prompt_cache: bool = True
+    anthropic_rate_limit_requests: int = Field(default=10, ge=1, le=60)
+    context_token_budget: int = Field(default=1800, ge=256, le=12000)
+    context_top_k: int = Field(default=3, ge=1, le=10)
+    prompt_token_budget: int = Field(default=6000, ge=512, le=16000)
+    history_token_budget: int = Field(default=600, ge=64, le=2000)
+    faq_cache_ttl_s: int = Field(default=300, ge=0, le=3600)
+    # Configured estimate, not an exchange-rate feed or a billing setting.
+    usd_inr_estimate: float = Field(default=85.0, gt=0)
+    sarvam_input_inr_million: float = Field(default=10.0, ge=0)
+    sarvam_cached_inr_million: float = Field(default=0.25, ge=0)
+    sarvam_output_inr_million: float = Field(default=25.0, ge=0)
+    anthropic_input_usd_million: float = Field(default=0.10, ge=0)
+    anthropic_output_usd_million: float = Field(default=0.50, ge=0)
+    anthropic_cache_read_usd_million: float = Field(default=0.01, ge=0)
+    anthropic_cache_write_usd_million: float = Field(default=0.125, ge=0)
 
     # --- Knowledge & index ----------------------------------------------
     knowledge_raw_dir: Path = PROJECT_DIR / "knowledge" / "raw"

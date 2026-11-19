@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 
 from app.rag.embeddings import tokenize
+from app.rag.multilingual import HINDI_STOP, concepts, normalize_question
 
 
 def normalize_query(text: str) -> str:
-    text = unicodedata.normalize("NFKC", text).lower().replace("’", "'")
+    text = normalize_question(text).lower().replace("’", "'")
     for pattern, replacement in (
         (r"\bdigiyatra\b", "digi yatra"),
         (r"\b(?:boarding[- ]?pass|bp)\b", "boarding pass"),
@@ -114,6 +114,8 @@ def intent_match(intent: str | None, chunk: dict) -> float:
 # Equivalent wording for claim validation; expansions never contribute new policy facts.
 _EQUIVALENTS = {
     "iphone": "ios",
+    "lit": "lighting",
+    "illuminated": "lighting",
     "ipad": "ios",
     "android": "android",
     "save": "store",
@@ -158,4 +160,6 @@ _ALIASES = {tokenize(k)[0]: tokenize(v)[0] for k, v in _EQUIVALENTS.items() if t
 def evidence_tokens(text: str) -> set[str]:
     # FAQ questions are not evidence for their own premises; only the answer is authoritative.
     text = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", text, flags=re.S)
-    return {_ALIASES.get(t, t) for t in tokenize(unicodedata.normalize("NFKC", text).replace("’", "'"))}
+    text = concepts(text)
+    unknown = {w for w in re.findall(r"[\u0900-\u097f]+", text) if w not in HINDI_STOP}
+    return {_ALIASES.get(t, t) for t in tokenize(text)} | unknown

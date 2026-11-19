@@ -11,6 +11,9 @@ import { ChatComposer } from "./ChatComposer";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { useChat } from "./useChat";
+import { ChatLanguage, hindiStarters, useChatText } from "./chat-language";
+import type { Locale } from "@/lib/i18n/dictionary";
+import type { AIProvider } from "@/lib/api";
 
 type Phase = "closed" | "open" | "closing";
 const CLOSE_ANIMATION_MS = 160;
@@ -20,9 +23,15 @@ const CLOSE_ANIMATION_MS = 160;
  * portal) that opens an animated chat panel — full-screen on phones.
  */
 export function ChatWidget() {
+  const chat = useChat();
+  return <ChatLanguage.Provider value={chat.locale}><ChatPanel chat={chat} /></ChatLanguage.Provider>;
+}
+
+function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
+  const t = useChatText();
   const [phase, setPhase] = useState<Phase>("closed");
   const [confirmClear, setConfirmClear] = useState(false);
-  const { messages, loading, send, retry, giveFeedback, clear, mode } = useChat();
+  const { messages, loading, send, retry, giveFeedback, clear, mode, locale, setLocale, provider, setProvider } = chat;
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -96,6 +105,7 @@ export function ChatWidget() {
         <div
           role="dialog"
           aria-modal="false"
+          lang={locale}
           aria-labelledby="chat-title"
           className={cn(
             "fixed inset-0 z-50 flex flex-col overflow-hidden bg-band-alt shadow-float",
@@ -108,18 +118,18 @@ export function ChatWidget() {
           <div className="flex items-center gap-3 bg-navy px-4 py-3 text-white">
             <LogoMark className="h-10 w-10 shrink-0 rounded-full ring-2 ring-white/40" title="" />
             <div className="min-w-0 flex-1">
-              <h2 id="chat-title" className="truncate font-semibold leading-tight">Digi Yatra Assistant</h2>
+              <h2 id="chat-title" className="truncate font-semibold leading-tight">{t.title}</h2>
               <p className="truncate text-xs text-white/75">
                 <span lang="hi" className="font-devanagari">डिजी यात्रा सहायक</span> ·{" "}
-                {mode === "mock" ? "Dev preview (mock)" : "Answers from approved sources"}
+                {mode === "mock" ? "Dev preview (mock)" : t.approved}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setConfirmClear(true)}
               disabled={!hasConversation}
-              aria-label="Clear conversation"
-              title="Clear conversation"
+              aria-label={t.clear}
+              title={t.clear}
               className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-40"
             >
               <Trash2 aria-hidden="true" className="h-4 w-4" />
@@ -127,12 +137,27 @@ export function ChatWidget() {
             <button
               type="button"
               onClick={close}
-              aria-label="Close assistant"
-              title="Close (Esc)"
+              aria-label={t.close}
+              title={`${t.close} (Esc)`}
               className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/15"
             >
               <X aria-hidden="true" className="h-5 w-5" />
             </button>
+          </div>
+
+          <div className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2 text-xs text-ink">
+            <label className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span>{locale === "hi" ? "भाषा" : "Language"}</span>
+              <select aria-label="Response language" value={locale} disabled={loading} onChange={(e) => setLocale(e.target.value as Locale)} className="min-w-0 flex-1 rounded border border-line bg-page px-1 py-1 text-ink">
+                <option value="en">English</option><option value="hi">हिन्दी</option>
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span>AI</span>
+              <select aria-label="AI provider" title={provider === "sarvam" ? "Sarvam AI — sarvam-105b" : "Anthropic — claude-haiku-5-5"} value={provider} disabled={loading} onChange={(e) => setProvider(e.target.value as AIProvider)} className="min-w-0 flex-1 rounded border border-line bg-page px-1 py-1 text-ink">
+                <option value="sarvam">Sarvam AI — 105B</option><option value="anthropic">Anthropic — Haiku 5.5</option>
+              </select>
+            </label>
           </div>
 
           {/* Mode banner — never let a mock pass for real AI */}
@@ -149,7 +174,7 @@ export function ChatWidget() {
 
           {confirmClear ? (
             <div role="alertdialog" aria-labelledby="clear-q" className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-4 py-2.5 text-sm">
-              <span id="clear-q" className="text-ink">Clear this conversation?</span>
+              <span id="clear-q" className="text-ink">{t.clearQuestion}</span>
               <span className="flex gap-2">
                 <button
                   type="button"
@@ -161,36 +186,35 @@ export function ChatWidget() {
                   }}
                   className="rounded bg-danger px-3 py-1 text-xs font-medium text-white hover:opacity-90"
                 >
-                  Clear
+                  {t.clearButton}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmClear(false)}
                   className="rounded border border-line px-3 py-1 text-xs font-medium text-ink hover:bg-band"
                 >
-                  Cancel
+                  {t.cancel}
                 </button>
               </span>
             </div>
           ) : null}
 
           {/* Conversation log */}
-          <div ref={logRef} role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div ref={logRef} role="log" aria-live="polite" aria-label={t.conversation} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
             <div className="flex flex-col items-start">
               <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-line-soft bg-surface px-3.5 py-2.5 text-[0.92rem] leading-relaxed text-ink shadow-card">
-                <p className="font-semibold text-heading">Namaste! Welcome to Digi Yatra.</p>
+                <p className="font-semibold text-heading">{t.welcome}</p>
                 <p className="mt-1">
-                  I can help with registration, the airport journey, supported airports, privacy and troubleshooting. Please
-                  don&apos;t share personal details such as Aadhaar numbers.
+                  {t.greeting}
                 </p>
               </div>
             </div>
 
             {!hasConversation ? (
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Suggested questions</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">{t.suggestions}</p>
                 <ul className="flex flex-col gap-2">
-                  {starterQuestions.map((q) => (
+                  {(locale === "hi" ? hindiStarters : starterQuestions).map((q) => (
                     <li key={q}>
                       <button
                         type="button"
@@ -227,7 +251,7 @@ export function ChatWidget() {
         type="button"
         onClick={phase === "open" ? close : open}
         aria-expanded={phase === "open"}
-        aria-label={phase === "open" ? "Close Digi Yatra Assistant" : "Open Digi Yatra Assistant"}
+        aria-label={phase === "open" ? t.closeLauncher : t.open}
         className={cn(
           "group fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-navy text-white shadow-float ring-4 ring-white transition-transform hover:scale-105 sm:bottom-6 sm:right-6 [html[data-contrast=high]_&]:ring-[#ffff00]",
           phase !== "closed" && "max-sm:hidden",
@@ -236,7 +260,7 @@ export function ChatWidget() {
         {phase === "open" ? <X aria-hidden="true" className="h-7 w-7" /> : <Headset aria-hidden="true" className="h-8 w-8" />}
         {phase === "closed" ? (
           <span className="pointer-events-none absolute right-[4.5rem] hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 py-1.5 text-sm font-medium text-brand shadow-card group-hover:flex group-focus-visible:flex">
-            <MessageSquareText aria-hidden="true" className="h-4 w-4" /> Ask Digi Yatra Assistant
+            <MessageSquareText aria-hidden="true" className="h-4 w-4" /> {t.ask}
           </span>
         ) : null}
       </button>
