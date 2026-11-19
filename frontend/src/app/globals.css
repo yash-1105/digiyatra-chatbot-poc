@@ -198,7 +198,6 @@ h1, h2, h3 { text-wrap: balance; }
 .site-header { color: white; background: #150d2f; }
 .header-inner { max-width: 1600px; margin: auto; min-height: 112px; padding: 1.4rem clamp(1.25rem,3vw,3.5rem); display: flex; align-items: center; gap: 2rem; }
 .header-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; flex-shrink: 0; }
-.brand-caption { font-size: 0.6rem; letter-spacing: 0.04em; color: #c9c1dd; }
 .header-links { display: flex; align-items: center; justify-content: center; gap: clamp(0.75rem,1.2vw,1.6rem); font-size: clamp(0.7rem,0.9vw,0.9rem); }
 .header-links a { white-space: nowrap; padding: 0.65rem 0; color: #fff; }
 .header-links a:hover { color: #bcb1ff; }
@@ -304,7 +303,6 @@ html:not([data-contrast="high"]) :is(#journey,#privacy) { --page: #150d2f; --sur
   .utility-bar > div > div { display: none; }
   .header-inner { gap: 1rem; min-height: 84px; padding: 1.25rem; }
   .header-wordmark { font-size: 1.9rem; }
-  .brand-caption { font-size: 0.56rem; }
   .header-menu { margin-left: auto; }
   .foundation-hero { min-height: 710px; padding: 5rem 1.25rem 2rem; }
   .hero-content { margin-bottom: 3.5rem; }
@@ -334,7 +332,7 @@ html[data-contrast="high"] :is(.site-header,.foundation-hero,.utility-bar,.site-
 html[data-contrast="high"] .hero-light-trail { display: none; }
 html[data-contrast="high"] :is(.feature-art,.wallet-illustration,.wallet-illustration figcaption) { background: #000; color: #fff; border: 1px solid #fff; }
 html[data-contrast="high"] :is(.header-download,.header-menu,.hero-assistant,.chat-launcher) { background: #000; color: #ff0; border: 1px solid #ff0; }
-html[data-contrast="high"] :is(.portal-brand,.brand-caption,.header-links a,.hero-intro,.hero-feature-copy p,.hero-feature-copy a,.admin-header nav a,.admin-header nav button) { color: #fff; }
+html[data-contrast="high"] :is(.portal-brand,.header-links a,.hero-intro,.hero-feature-copy p,.hero-feature-copy a,.admin-header nav a,.admin-header nav button) { color: #fff; }
 .admin-wordmark { color: #fff; }
 .portal-section :is(.rounded-md,.rounded-lg) { border-radius: 14px; }
 html[data-contrast="high"] .admin-wordmark { color: #fff; }

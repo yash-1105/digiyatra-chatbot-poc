@@ -16,7 +16,7 @@ try {
   check(device+' new hero and dark identity',await p.locator('.foundation-hero').evaluate(el=>getComputedStyle(el).backgroundColor==='rgb(21, 13, 47)'));
   check(device+' no horizontal overflow',await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   check(device+' all existing information anchors',await p.evaluate(()=>['about','how-it-works','registration','journey','airports','privacy','faq','support','whats-new','welcome'].every(id=>document.getElementById(id))));
-  check(device+' independent identity visible',await p.getByText('Independent information portal',{exact:true}).isVisible());
+  check(device+' header caption removed',await p.locator('.site-header').innerText().then(t=>!t.includes('Independent information portal')));
   check(device+' disclaimer retained',await p.locator('footer').innerText().then(t=>t.includes('not an official website')));
   check(device+' reduced motion honored',await p.locator('.hero-light-trail i').first().evaluate(el=>parseFloat(getComputedStyle(el).animationDuration)<.1));
   const nav=p.getByRole('button',{name:'Menu',exact:true});

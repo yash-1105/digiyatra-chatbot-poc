@@ -29,7 +29,6 @@ export function SiteHeader() {
       <div className="header-inner">
         <Link href="/" className="header-identity" aria-label="Digi Yatra Information Portal — Home">
           <LogoMark wordmark className="header-wordmark" title="" />
-          <span className="brand-caption">Independent information portal</span>
         </Link>
         <nav aria-label="Main" className="hidden min-w-0 flex-1 xl:block">
           <ul className="header-links">
