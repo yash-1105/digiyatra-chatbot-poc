@@ -1,45 +1,43 @@
-import { BadgeCheck, Clock, Hand, Sparkles, Users } from "lucide-react";
-import { Card } from "@/components/ui/Card";
+"use client";
+
+import { ArrowUpRight, Fingerprint, ScanFace, ShieldCheck, Smartphone } from "lucide-react";
 import { Section } from "@/components/ui/Section";
-import { SectionHeading } from "@/components/ui/SectionHeading";
+import { usePreferences } from "@/lib/accessibility/preferences";
 import { aboutFacts, benefits } from "@/content/site";
 
-const BENEFIT_ICONS = [Clock, Users, Hand, Sparkles];
+const FEATURES = [
+  { title: "A contactless airport journey", href: "#journey", Icon: ScanFace, style: "verification", detail: "From airport entry to the boarding gate." },
+  { title: "Your journey, on your phone", href: "#registration", Icon: Smartphone, style: "mobile-wallet", detail: "One-time enrolment in the official Digi Yatra app." },
+  { title: "Privacy stays with you", href: "#privacy", Icon: Fingerprint, style: "privacy-visual", detail: "Your credentials. Your device. Your consent." },
+];
 
 export function AboutSection() {
+  const { locale } = usePreferences();
   return (
-    <Section id="about" labelledBy="about-title" tone="grey">
-      <SectionHeading
-        id="about-title"
-        labelKey="about"
-        description="Digi Yatra enables paperless and contactless passenger processing at Indian airports, built on the principle that passengers stay in control of their own data."
-      />
-      <div className="grid gap-5 md:grid-cols-2">
-        {aboutFacts.map((f) => (
-          <Card key={f.title} className="border-l-4 border-l-brand">
-            <h3 className="flex items-center gap-2 text-lg font-semibold text-heading">
-              <BadgeCheck aria-hidden="true" className="h-5 w-5 text-accent" />
-              {f.title}
-            </h3>
-            <p className="mt-2 leading-relaxed text-ink-muted">{f.body}</p>
-          </Card>
+    <Section id="about" labelledBy="about-title">
+      <div className="editorial-heading">
+        <h2 id="about-title">{locale === "hi" ? <><span>हवाई अड्डों पर</span> सुगम यात्रा।</> : <><span>Driving efficiency</span> in airports.</>}</h2>
+        <p>Digi Yatra enables paperless and contactless passenger processing at Indian airports, built on the principle that passengers stay in control of their own data.</p>
+      </div>
+      <div className="editorial-features">
+        {FEATURES.map(({ title, href, Icon, style, detail }) => (
+          <a key={title} href={href} className="editorial-feature group">
+            <div className={`feature-art ${style}`} aria-hidden="true">
+              <div className="feature-art-orbit" /><Icon strokeWidth={0.8} />
+              {style === "verification" && <span className="scan-beam" />}
+              {style === "mobile-wallet" && <span className="wallet-ticket"><ShieldCheck strokeWidth={1.2} /> Identity &amp; travel</span>}
+            </div>
+            <h3>{title}<ArrowUpRight aria-hidden="true" className="h-5 w-5 shrink-0 transition-transform group-hover:-translate-y-1 group-hover:translate-x-1" /></h3>
+            <p>{detail}</p>
+          </a>
         ))}
       </div>
-
-      <h3 className="mb-4 mt-12 text-center text-xl font-medium text-heading">Benefits for passengers</h3>
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {benefits.map((b, i) => {
-          const Icon = BENEFIT_ICONS[i] ?? Sparkles;
-          return (
-            <li key={b.title} className="rounded-md bg-surface p-5 text-center shadow-card">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-soft text-brand">
-                <Icon aria-hidden="true" className="h-6 w-6" />
-              </span>
-              <p className="mt-3 font-semibold text-heading">{b.title}</p>
-              <p className="mt-1 text-sm leading-relaxed text-ink-muted">{b.body}</p>
-            </li>
-          );
-        })}
+      <div className="about-facts grid gap-8 border-y border-line py-9 md:grid-cols-2">
+        {aboutFacts.map(f => <div key={f.title}><h3 className="text-lg font-semibold text-heading">{f.title}</h3><p className="mt-3 text-sm leading-relaxed text-ink-muted">{f.body}</p></div>)}
+      </div>
+      <h3 className="mb-6 mt-10 text-xl font-semibold text-heading">Benefits for passengers</h3>
+      <ul className="grid gap-7 sm:grid-cols-2 lg:grid-cols-4">
+        {benefits.map(b => <li key={b.title}><h4 className="font-medium text-heading">{b.title}</h4><p className="mt-2 text-sm leading-relaxed text-ink-muted">{b.body}</p></li>)}
       </ul>
     </Section>
   );

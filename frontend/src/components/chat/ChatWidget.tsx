@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlaskConical, Headset, MessageSquareText, Trash2, X } from "lucide-react";
+import { FlaskConical, MessageSquareText, Trash2, X } from "lucide-react";
 import { LogoMark } from "@/components/brand/LogoMark";
 import { starterQuestions } from "@/content/starter-questions";
 import { MOCK_ERROR_TRIGGER } from "@/lib/api";
@@ -108,15 +108,15 @@ function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
           lang={locale}
           aria-labelledby="chat-title"
           className={cn(
-            "fixed inset-0 z-50 flex flex-col overflow-hidden bg-band-alt shadow-float",
-            "sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[400px] sm:rounded-xl sm:border sm:border-line",
+            "chat-panel fixed inset-0 z-50 flex flex-col overflow-hidden bg-band-alt shadow-float",
+            "sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(640px,calc(100dvh-8rem))] sm:w-[420px] sm:rounded-3xl sm:border sm:border-line",
             "origin-bottom-right",
             phase === "closing" ? "animate-chat-out" : "animate-chat-in",
           )}
         >
           {/* Header */}
-          <div className="flex items-center gap-3 bg-navy px-4 py-3 text-white">
-            <LogoMark className="h-10 w-10 shrink-0 rounded-full ring-2 ring-white/40" title="" />
+          <div className="chat-header flex items-center gap-3 bg-navy px-4 py-4 text-white">
+            <LogoMark className="chat-brand shrink-0" title="" />
             <div className="min-w-0 flex-1">
               <h2 id="chat-title" className="truncate font-semibold leading-tight">{t.title}</h2>
               <p className="truncate text-xs text-white/75">
@@ -253,11 +253,11 @@ function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
         aria-expanded={phase === "open"}
         aria-label={phase === "open" ? t.closeLauncher : t.open}
         className={cn(
-          "group fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-navy text-white shadow-float ring-4 ring-white transition-transform hover:scale-105 sm:bottom-6 sm:right-6 [html[data-contrast=high]_&]:ring-[#ffff00]",
+          "chat-launcher group fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-navy text-white shadow-float ring-4 ring-white transition-transform hover:scale-105 sm:bottom-6 sm:right-6 [html[data-contrast=high]_&]:ring-[#ffff00]",
           phase !== "closed" && "max-sm:hidden",
         )}
       >
-        {phase === "open" ? <X aria-hidden="true" className="h-7 w-7" /> : <Headset aria-hidden="true" className="h-8 w-8" />}
+        {phase === "open" ? <X aria-hidden="true" className="h-7 w-7" /> : <LogoMark className="launcher-brand" title="" />}
         {phase === "closed" ? (
           <span className="pointer-events-none absolute right-[4.5rem] hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-surface px-3 py-1.5 text-sm font-medium text-brand shadow-card group-hover:flex group-focus-visible:flex">
             <MessageSquareText aria-hidden="true" className="h-4 w-4" /> {t.ask}

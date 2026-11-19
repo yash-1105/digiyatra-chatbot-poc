@@ -12,22 +12,18 @@ interface SectionHeadingProps {
   className?: string;
 }
 
-/**
- * Formal portal heading: large navy-blue title in the active language with
- * the other language as a small bilingual subtitle, plus a short orange rule.
- */
-export function SectionHeading({ id, labelKey, description, align = "center", className }: SectionHeadingProps) {
+export function SectionHeading({ id, labelKey, description, align = "left", className }: SectionHeadingProps) {
   const { t } = usePreferences();
   const alt = useAltLabel();
   return (
-    <div className={cn("mb-8", align === "center" ? "text-center" : "text-left", className)}>
-      <h2 id={id} className="text-[1.75rem] font-medium leading-tight text-heading sm:text-[2rem]">
+    <div className={cn("section-heading mb-10 sm:mb-14", align === "center" ? "text-center" : "text-left", className)}>
+      <h2 id={id} className="section-title font-semibold leading-tight text-heading">
         {t(labelKey)}
       </h2>
       <p className="mt-1 text-sm font-medium tracking-wide text-ink-soft">{alt(labelKey)}</p>
       <span
         aria-hidden="true"
-        className={cn("mt-3 block h-[3px] w-14 rounded bg-accent", align === "center" ? "mx-auto" : "")}
+        className={cn("hidden", align === "center" ? "mx-auto" : "")}
       />
       {description ? (
         <p className={cn("mt-4 max-w-3xl text-base leading-relaxed text-ink-muted", align === "center" ? "mx-auto" : "")}>

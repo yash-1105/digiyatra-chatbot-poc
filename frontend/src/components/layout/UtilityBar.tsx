@@ -17,7 +17,7 @@ export function UtilityBar() {
     "flex h-7 min-w-7 items-center justify-center rounded px-1 text-[0.8rem] text-white/90 hover:bg-white/10 hover:text-white";
 
   return (
-    <div className="bg-navy text-white">
+    <div className="utility-bar bg-navy text-white">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-1.5 sm:px-6 lg:px-8">
         {/* Left: bilingual organisation name */}
         <div className="flex items-center gap-3 text-[0.68rem] font-semibold uppercase leading-tight">
@@ -25,6 +25,7 @@ export function UtilityBar() {
             <span className="block font-devanagari normal-case">डिजी यात्रा सूचना पोर्टल</span>
             <span className="block">Digi Yatra Information Portal</span>
           </div>
+          <Link href="/admin/login" className="ml-3 border-l border-white/25 pl-4 text-[0.68rem] font-normal normal-case text-white/80 hover:underline">{t("adminLogin")}</Link>
         </div>
 
         {/* Right: skip link, screen-reader page, contrast, text size, language */}

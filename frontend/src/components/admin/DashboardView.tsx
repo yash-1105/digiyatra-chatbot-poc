@@ -55,7 +55,7 @@ function Panel({ title, icon: Icon, children, className, action }: {
 }) {
   const id = `panel-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
-    <section aria-labelledby={id} className={cn("rounded-md border border-line-soft bg-surface shadow-card", className)}>
+    <section aria-labelledby={id} className={cn("dashboard-panel rounded-2xl border border-line-soft bg-surface shadow-card", className)}>
       <div className="flex items-center justify-between gap-3 border-b border-line-soft px-5 py-3">
         <h2 id={id} className="flex items-center gap-2 text-[1.05rem] font-semibold text-heading">
           <Icon aria-hidden="true" className="h-5 w-5 text-accent" />
@@ -80,7 +80,7 @@ function MetricCard({ label, value, hint, icon: Icon, empty }: {
   label: string; value: string; hint: string; icon: typeof BarChart3; empty?: boolean;
 }) {
   return (
-    <div className="flex flex-col rounded-md border-t-4 border-t-panel bg-surface p-5 shadow-card">
+    <div className="metric-card flex flex-col rounded-2xl border border-line-soft bg-surface p-6 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-ink-muted">{label}</p>
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-brand">

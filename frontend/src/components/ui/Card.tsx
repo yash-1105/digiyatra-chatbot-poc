@@ -3,6 +3,6 @@ import { cn } from "@/lib/cn";
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-md border border-line-soft bg-surface p-5 shadow-card sm:p-6", className)}>{children}</div>
+    <div className={cn("rounded-2xl border border-line-soft bg-surface p-6 shadow-card sm:p-8", className)}>{children}</div>
   );
 }

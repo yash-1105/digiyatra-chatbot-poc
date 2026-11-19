@@ -15,14 +15,14 @@ export default function HomePage() {
   return (
     <PublicShell>
       <HeroSection />
-      <WhatsNewSection />
-      <WelcomeSection />
       <AboutSection />
       <HowItWorksSection />
       <RegistrationSection />
       <JourneySection />
+      <WelcomeSection />
       <AirportsSection />
       <PrivacySection />
+      <WhatsNewSection />
       <FaqSection />
       <SupportSection />
     </PublicShell>

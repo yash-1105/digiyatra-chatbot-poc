@@ -1,19 +1,21 @@
-import { Baby, IdCard, Languages, PlayCircle, Smartphone, UserRound, Users } from "lucide-react";
+"use client";
+
+import { Baby, IdCard, Languages, PlayCircle, QrCode, ScanFace, ShieldCheck, Smartphone, UserRound, Users } from "lucide-react";
 import { Section } from "@/components/ui/Section";
-import { SectionHeading } from "@/components/ui/SectionHeading";
 import { registrationSteps, registrationTips } from "@/content/site";
+import { usePreferences } from "@/lib/accessibility/preferences";
 import { officialLinks } from "@/lib/config";
 
 const TIP_ICONS = [IdCard, UserRound, Baby, Smartphone, IdCard, Languages];
 
 export function RegistrationSection() {
+  const { locale } = usePreferences();
   return (
     <Section id="registration" labelledBy="registration-title" tone="grey">
-      <SectionHeading
-        id="registration-title"
-        labelKey="registration"
-        description="Enrolment is a one-time process completed entirely in the official Digi Yatra app."
-      />
+      <div className="join-heading">
+        <h2 id="registration-title">{locale === "hi" ? <><span>डिजी यात्रा</span> से जुड़ें।</> : <><span>Join</span> Digi Yatra today.</>}</h2>
+        <p>Enrolment is a one-time process completed entirely in the official Digi Yatra app.</p>
+      </div>
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <ol className="rounded-md bg-surface p-6 shadow-card sm:p-8">
           {registrationSteps.map((s, i) => (
@@ -33,6 +35,16 @@ export function RegistrationSection() {
         </ol>
 
         <div className="flex flex-col gap-5">
+          <figure className="wallet-illustration">
+            <div className="wallet-phone" aria-hidden="true">
+              <span className="phone-speaker" />
+              <ScanFace strokeWidth={1} className="phone-face" />
+              <span className="phone-wallet-title">Your mobile wallet</span>
+              <div className="phone-pass"><QrCode strokeWidth={1} /><span>Boarding pass</span><ShieldCheck strokeWidth={1.3} /></div>
+              <span className="phone-home" />
+            </div>
+            <figcaption>Concept illustration · not an app screen</figcaption>
+          </figure>
           <div className="rounded-md bg-panel p-6 text-panel-ink shadow-card">
             <h3 className="text-lg font-semibold">Get the official app</h3>
             <p className="mt-1 text-sm text-panel-ink/85">Only download Digi Yatra from the official app stores.</p>

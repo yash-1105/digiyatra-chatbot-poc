@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans, Noto_Sans_Devanagari } from "next/font/google";
+import { Poppins, Noto_Sans_Devanagari } from "next/font/google";
 import { PreferencesProvider } from "@/lib/accessibility/preferences";
 import "./globals.css";
 
-const notoSans = Noto_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-noto-sans", display: "swap" });
+const notoSans = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-noto-sans", display: "swap" });
 const notoDevanagari = Noto_Sans_Devanagari({
   subsets: ["devanagari"],
   weight: ["400", "500", "600", "700"],
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#1a2a48",
+  themeColor: "#150d2f",
 };
 
 // Applies saved accessibility preferences before first paint (no flash).

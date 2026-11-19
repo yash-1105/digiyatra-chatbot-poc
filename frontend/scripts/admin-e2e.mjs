@@ -27,6 +27,7 @@ const check = (name, ok, detail = "") => {
 
 function chromiumPath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   const root = join(homedir(), ".cache", "ms-playwright");
   for (const d of readdirSync(root).filter((d) => d.startsWith("chromium_headless_shell-")).sort().reverse()) {
     const p = join(root, d, "chrome-headless-shell-linux64", "chrome-headless-shell");
@@ -179,6 +180,7 @@ try {
   check("unexpected error", false, String(e).slice(0, 300));
   await page.screenshot({ path: `${OUT}admin-e2e-failure.png` });
 } finally {
+  await ctx.close();
   await browser.close();
 }
 const failed = results.filter((r) => !r.ok).length;

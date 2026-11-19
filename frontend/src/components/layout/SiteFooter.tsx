@@ -13,13 +13,13 @@ export function SiteFooter() {
   const half = Math.ceil(mainNav.length / 2);
 
   return (
-    <footer className="bg-navy-deep text-white/85">
-      <div className="h-1 bg-accent" aria-hidden="true" />
-      <div className="mx-auto grid max-w-[1440px] gap-10 px-4 py-12 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
+    <footer className="site-footer bg-navy-deep text-white/85">
+      <div className="footer-spectrum" aria-hidden="true" />
+      <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-20 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
         <div>
           <div className="flex items-center gap-3">
-            <LogoMark className="h-12 w-12" title="" />
-            <div className="leading-tight text-white">
+            <LogoMark wordmark className="footer-wordmark" title="" />
+            <div className="sr-only">
               <p className="font-devanagari font-semibold">डिजी यात्रा सूचना पोर्टल</p>
               <p className="text-sm font-semibold uppercase tracking-wide">Digi Yatra</p>
             </div>
