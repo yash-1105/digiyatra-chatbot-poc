@@ -228,3 +228,18 @@ Representative observed replies, abbreviated without republishing source passage
 - General Hindi: “ओटीपी (वन-टाइम पासवर्ड) एक अस्थायी सुरक्षा कोड है जिसे केवल एक बार उपयोग किया जाता है,” explicitly labelled as general information rather than Digi Yatra policy, without fabricated sources.
 
 Remaining limitations: Anthropic requires operator action before final readiness can be confirmed; bounded normalization and lexical claim validation are not a universal multilingual semantic proof; in-process caches, summaries and limits reset on restart and require one replica; content-owner signoff remains pending. The screenshot suite still reports the existing missing `/favicon.ico`, and the previously documented Railway legacy-configuration migration deadline remains unchanged.
+
+
+## Answering reliability update — 19 November 2026
+
+Implementation commit: `2571c5b`. Railway deployment: `672b8b54-3855-4cf7-8698-59d6d85fb2ce` (**SUCCESS**).
+
+- Public frontend: https://digiyatra-chatbot-poc.vercel.app
+- Backend: https://backend-production-ab8a175f.up.railway.app
+- Removed the pre-retrieval airport-catalog refusal; preserved live-operation, account, injection, PII and unapproved-trial restrictions. Added organization/catalog/retention intent ranking, complete approved FAQ assembly, bounded second retrieval, bilingual concept support, snapshot qualifications and privacy-safe decision logging. No corpus/schema/credential/billing/admin changes.
+- Backend tests: **368 passed**, 15 live tests deselected. Frontend typecheck, lint and production build passed; frontend runtime code is unchanged and no Vercel redeployment was necessary.
+- Real Sarvam evaluation: **39/39** both locally and in the deployed runtime, with synthetic databases. All 47 deployed application modules matched source hashes. Synthetic feedback returned 204; production migration revision remains `0002_ai_usage`.
+- Public Chrome verification: **28/28 checks passed**, with real production-proxy/backend responses and signed no-write synthetic isolation. The government-application question now gives cited Foundation/company/framework information in English and Hindi. Airport questions return all 24 documented entries, an undated qualification and official verification link. Live Delhi-gate status remains unverified; public homepage/admin login and anonymous admin restrictions passed.
+- Anthropic live verification remains blocked by insufficient account credits (upstream HTTP 400 mapped to safe HTTP 503). Both providers pass the shared offline contract/security tests; no silent provider substitution occurred. Restore the existing Anthropic account's credit balance to complete real Anthropic answer-quality verification; no Railway billing or API secret changes are required.
+
+See [ANSWERING_RELIABILITY_REPORT.md](ANSWERING_RELIABILITY_REPORT.md) for root causes, changed behavior, before/after comparisons, verification methods and limitations. Private raw benchmark responses and knowledge files are excluded from GitHub.
