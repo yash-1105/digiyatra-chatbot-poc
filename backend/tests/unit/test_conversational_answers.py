@@ -191,5 +191,23 @@ def test_no_feature_mention_does_not_prove_feature_unavailable():
 
 def test_brand_question_asks_model_about_platform_not_model_compatibility():
     from app.services.prompts import build_user_turn
-    question = build_user_turn('Can I use Digi Yatra on Samsung?', '<evidence>approved</evidence>')
-    assert 'on Android phone?' in question and 'on Samsung?' not in question
+
+    question = build_user_turn("Can I use Digi Yatra on Samsung?", "<evidence>approved</evidence>")
+    assert "on Android phone?" in question and "on Samsung?" not in question
+
+
+def test_removed_unsupported_step_does_not_leave_numbering_gap():
+    r = ground_answer(
+        "1. Open the PDF [1].\n2. Earn cashback rewards [1].\n3. Select Share [1].",
+        {1: 0},
+        ["Open the boarding pass PDF and select Share."],
+    )
+    assert r.dropped == 1 and "2. Select Share" in r.text and "3." not in r.text
+
+
+def test_scan_question_keeps_scan_option_instead_of_pdf_tutorial(retriever):
+    q = "How do I scan the boarding pass?"
+    assert query_intent(q) == "boarding_scan"
+    hits = retriever.search(q)
+    assert any("Scan Boarding Pass" in h.text for h in hits)
+    assert all(h.source_file != "share_data_with_app.md" for h in hits)

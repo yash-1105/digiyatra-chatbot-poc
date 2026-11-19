@@ -61,13 +61,11 @@ CITATION_REPAIR = (
 )
 
 
-def build_user_turn(question: str, evidence: str) -> str:
-    if query_intent(question) == "app_download":
-        # Resolve the platform, without promising compatibility with every model.
-        question = re.sub(r"(?i)\b(samsung|oneplus|pixel)\b", "Android phone", question)
-    procedural = query_intent(question) in {
+def procedure_requested(question: str) -> bool:
+    return query_intent(question) in {
         "boarding_pdf",
         "boarding_upload",
+        "boarding_scan",
         "boarding_problem",
         "selfie_problem",
         "otp_problem",
@@ -77,6 +75,13 @@ def build_user_turn(question: str, evidence: str) -> str:
             question,
         )
     )
+
+
+def build_user_turn(question: str, evidence: str) -> str:
+    if query_intent(question) == "app_download":
+        # Resolve the platform, without promising compatibility with every model.
+        question = re.sub(r"(?i)\b(samsung|oneplus|pixel)\b", "Android phone", question)
+    procedural = procedure_requested(question)
     style = (
         " Start with a direct action, then put each supported action on its own numbered line (1., 2., 3.). "
         "Do not turn a multi-step procedure into a single prose paragraph. Do not invent extra steps to fill the list."

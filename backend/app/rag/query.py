@@ -46,7 +46,9 @@ def query_intent(text: str) -> str | None:
         return "boarding_problem"
     if "pdf" in q and re.search(r"\b(upload|share|send|add|phone|file)\b", q):
         return "boarding_pdf"
-    if "boarding pass" in q and re.search(r"\b(upload|add|scan|where|how|ticket)\b", q):
+    if "boarding pass" in q and re.search(r"\bscan\b", q):
+        return "boarding_scan"
+    if "boarding pass" in q and re.search(r"\b(upload|add|where|how|ticket)\b", q):
         return "boarding_upload"
     if re.search(r"\b(download|install)\b", q) or (
         re.search(r"\b(android|ios|play store|app store)\b", q)
@@ -65,6 +67,7 @@ INTENT_TERMS = {
     "app_download": "download app android ios google play store apple app store",
     "boarding_pdf": "boarding pass pdf phone files share digi yatra consent",
     "boarding_upload": "boarding pass upload scan image pdf share consent",
+    "boarding_scan": "scan boarding pass clear valid QR code app option",
     "boarding_problem": "boarding pass upload failing name aadhaar valid qr scan",
     "registration": "register registration aadhaar digilocker otp selfie",
     "otp_problem": "otp receiving mobile verification network uidai",
@@ -85,6 +88,10 @@ def intent_match(intent: str | None, chunk: dict) -> float:
         return float("play.google.com/" in text and "apps.apple.com/" in text)
     if intent == "boarding_pdf":
         return float(all(w in text for w in ("pdf", "share", "consent")))
+    if intent == "boarding_scan":
+        if "scan boarding pass" in text and "qr" in text:
+            return 1.0
+        return 0.8 if all(w in text for w in ("boarding pass", "scan", "image", "pdf")) else 0.0
     if intent == "boarding_upload":
         if "boarding pass" not in text:
             return 0.0

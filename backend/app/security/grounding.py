@@ -197,4 +197,13 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
 
     res.text = re.sub(r"[ \t]+\n", "\n", re.sub(r"[ \t]{2,}", " ", "".join(pieces))).strip()
     res.text = re.sub(r"\n{3,}", "\n\n", res.text)
+    # Unsupported steps can be removed; the remaining list must still read 1, 2, 3.
+    step = 0
+
+    def renumber(match: re.Match) -> str:
+        nonlocal step
+        step += 1
+        return f"{step}. "
+
+    res.text = re.sub(r"(?m)^\d+[.)]\s+", renumber, res.text)
     return res

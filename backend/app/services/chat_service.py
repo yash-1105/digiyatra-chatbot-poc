@@ -28,6 +28,7 @@ from app.services.prompts import (
     SYSTEM_PROMPT,
     build_user_turn,
     format_evidence,
+    procedure_requested,
 )
 
 log = logging.getLogger(__name__)
@@ -339,6 +340,11 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model), top)
         checked.text = grounded.text
+        if procedure_requested(question) and not re.search(r"(?m)^\d+[.)]\s", checked.text):
+            sentences = re.split(r"(?<=[.!?])\s+", checked.text)
+            if len(sentences) >= 2:
+                # Format only already-validated sentences; never generate extra actions.
+                checked.text = "\n".join(f"{i}. {sentence}" for i, sentence in enumerate(sentences, 1))
         cited_chunks = [hits[i] for i in grounded.cited_hits]
         if any(c.conflict_ids for c in cited_chunks):
             notices.append(NOTICE_CONFLICT)

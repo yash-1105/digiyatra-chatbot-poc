@@ -235,8 +235,8 @@ class Retriever:
                                    r.keyword_score, r.vector_score, r.chunk_id), reverse=True)
 
         # Platform/download questions need store evidence, not nearby device-error FAQs.
-        if intent == "app_download":
-            direct = [r for r in scored if intent_match(intent, {"text": r.text})]
+        if intent in {"app_download", "boarding_upload", "boarding_pdf", "boarding_scan"}:
+            direct = [r for r in scored if intent_match(intent, {"text": r.text}) >= (0.8 if intent == "boarding_scan" else 0.9)]
             if direct:
                 scored = direct
 
