@@ -151,6 +151,8 @@ class AuthService:
 
 
 class LoginThrottle:
+    MAX_KEYS = 10_000
+
     """Failed-login limiter keyed by (client IP) and (email, IP). In-process."""
 
     def __init__(self, max_failures: int, window_minutes: int) -> None:
@@ -160,7 +162,7 @@ class LoginThrottle:
         self._lock = threading.Lock()
 
     def _prune(self, key: str, now: float) -> deque[float]:
-        q = self._fail[key]
+        q = self._fail.get(key, deque())
         while q and now - q[0] > self.window:
             q.popleft()
         return q
@@ -169,6 +171,10 @@ class LoginThrottle:
         """Seconds until the caller may retry (0 = allowed)."""
         now = time.monotonic()
         with self._lock:
+            if len(self._fail) >= self.MAX_KEYS:
+                self._collect(now)
+                if len(self._fail) >= self.MAX_KEYS and f"acct:{normalise_email(email)}|{ip}" not in self._fail:
+                    return max(1, int(self.window))
             waits = []
             for key, limit in ((f"ip:{ip}", self.max_failures * 4), (f"acct:{normalise_email(email)}|{ip}", self.max_failures)):
                 q = self._prune(key, now)
@@ -176,11 +182,21 @@ class LoginThrottle:
                     waits.append(int(self.window - (now - q[0])) + 1)
             return max(waits, default=0)
 
+    def _collect(self, now: float) -> None:
+        for key in list(self._fail):
+            if not self._prune(key, now):
+                del self._fail[key]
+
     def failure(self, ip: str, email: str) -> None:
         now = time.monotonic()
         with self._lock:
-            self._fail[f"ip:{ip}"].append(now)
-            self._fail[f"acct:{normalise_email(email)}|{ip}"].append(now)
+            keys = (f"ip:{ip}", f"acct:{normalise_email(email)}|{ip}")
+            if len(self._fail) + sum(k not in self._fail for k in keys) > self.MAX_KEYS:
+                self._collect(now)
+                if len(self._fail) + sum(k not in self._fail for k in keys) > self.MAX_KEYS:
+                    return  # blocked() rejects new identities until state expires
+            for key in keys:
+                self._fail[key].append(now)
 
     def success(self, ip: str, email: str) -> None:
         with self._lock:

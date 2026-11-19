@@ -59,7 +59,12 @@ async def login(body: LoginRequest, request: Request, response: Response) -> Ses
     if wait:
         log.warning("admin login throttled")
         raise _err(429, "too_many_attempts", "Too many sign-in attempts. Please wait and try again later.")
-    user = await run_in_threadpool(st.auth.authenticate, body.email, body.password)
+    if not st.admin_login_capacity.acquire(blocking=False):
+        raise _err(429, "too_many_attempts", "Sign-in is busy. Please wait briefly and try again.")
+    try:
+        user = await run_in_threadpool(st.auth.authenticate, body.email, body.password)
+    finally:
+        st.admin_login_capacity.release()
     if user is None:
         st.login_throttle.failure(ip, body.email)
         log.warning("admin login failed")  # never log the password (or the attempted email)

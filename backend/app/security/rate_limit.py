@@ -13,6 +13,8 @@ from fastapi import Request
 
 
 class RateLimiter:
+    MAX_KEYS = 10_000
+
     def __init__(self, limit: int, window_s: float) -> None:
         self.limit = limit
         self.window_s = window_s
@@ -23,15 +25,21 @@ class RateLimiter:
         """Returns (allowed, retry_after_seconds)."""
         now = time.monotonic()
         with self._lock:
+            if key not in self._hits and len(self._hits) >= self.MAX_KEYS:
+                for old in list(self._hits):
+                    events = self._hits[old]
+                    while events and now - events[0] > self.window_s:
+                        events.popleft()
+                    if not events:
+                        del self._hits[old]
+                if len(self._hits) >= self.MAX_KEYS:
+                    return False, max(1, int(self.window_s))  # fail closed under identity saturation
             q = self._hits[key]
             while q and now - q[0] > self.window_s:
                 q.popleft()
             if len(q) >= self.limit:
                 return False, max(1, int(self.window_s - (now - q[0])) + 1)
             q.append(now)
-            if len(self._hits) > 10_000:  # bound memory
-                for k in [k for k, v in self._hits.items() if not v][:5000]:
-                    del self._hits[k]
             return True, 0
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -106,6 +107,7 @@ def create_app(
         AuthService(app.state.db, settings.admin_session_ttl_minutes, settings.admin_session_idle_minutes)
         if migrated else None
     )
+    app.state.admin_login_capacity = threading.BoundedSemaphore(2)
     app.state.login_throttle = LoginThrottle(settings.admin_login_max_failures, settings.admin_login_window_minutes)
     app.state.index_meta = None
     app.state.retriever = None

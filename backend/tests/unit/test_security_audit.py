@@ -170,3 +170,50 @@ def test_sql_metacharacters_and_command_payloads_remain_literal_input(app_factor
         assert r.status_code==401
         assert c.get('/api/v1/admin/analytics').status_code==401
         assert c.get('/api/v1/health').json()['status']=='ok'
+
+
+def test_login_throttle_unknown_accounts_do_not_allocate_state():
+    from app.services.auth import LoginThrottle
+    limiter=LoginThrottle(5,15)
+    for i in range(2000):
+        assert limiter.blocked('test-ip',f'unknown-{i}@example.invalid')==0
+    assert len(limiter._fail)==0
+
+
+def test_rate_identity_state_is_bounded_and_fail_closed(monkeypatch):
+    from app.security.rate_limit import RateLimiter
+    limiter=RateLimiter(2,60)
+    monkeypatch.setattr(limiter,'MAX_KEYS',3)
+    for key in ['a','b','c']:
+        assert limiter.check(key)[0]
+    assert not limiter.check('d')[0] and len(limiter._hits)==3
+    assert limiter.check('a')[0] and not limiter.check('a')[0]
+
+
+def test_admin_password_hashing_has_bounded_concurrency(app_factory,monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    with app_factory() as c:
+        entered=threading.Event()
+        release=threading.Event()
+        lock=threading.Lock()
+        active=0
+        def authenticate(*_):
+            nonlocal active
+            with lock:
+                active+=1
+                if active==2:
+                    entered.set()
+            assert release.wait(10)
+            return None
+        monkeypatch.setattr(c.app.state.auth,'authenticate',authenticate)
+        body=dict(email='test@example.invalid',password='synthetic-bogus-password')
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first=pool.submit(c.post,'/api/v1/admin/auth/login',json=body)
+            second=pool.submit(c.post,'/api/v1/admin/auth/login',json=body)
+            try:
+                assert entered.wait(10)
+                assert c.post('/api/v1/admin/auth/login',json=body).status_code==429
+            finally:
+                release.set()
+            assert first.result().status_code==second.result().status_code==401
