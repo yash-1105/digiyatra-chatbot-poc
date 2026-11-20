@@ -25,7 +25,7 @@ The current production selector remains the default. The opt-in selector retains
 | Existing lexical hybrid retrieval, approved-source control and grounding | Retained. Deterministic index ordering and ranking lookup improvements are active. |
 | Whole-passage coverage selection and compact prompts | Implemented behind `RAG_CONTEXT_OPTIMIZATION_ENABLED`, default off. The paired replay did not clear release gates. |
 | PostgreSQL reviewed exact FAQ cache | Implemented behind `FAQ_CACHE_ENABLED`, default off. Content-owner review and a private production bundle are pending. The previous generated-response cache was removed. |
-| Anthropic five-minute prefix caching | Implemented behind `ANTHROPIC_PROMPT_CACHE_ENABLED`, default off. The old `ANTHROPIC_PROMPT_CACHE` setting remains an alias. See benchmark and rollout records. |
+| Anthropic five-minute prefix caching | Implemented behind `ANTHROPIC_PROMPT_CACHE_ENABLED`, default off and explicitly on in production to retain native caching with a stable prefix. The old `ANTHROPIC_PROMPT_CACHE` setting remains an alias. |
 | Semantic response caching | Blocked by account entitlement and absence of an existing dense index. No semantic lookup code or runtime flag. |
 | Headroom, LLMLingua-2 and heavier reranking | Declined for production after the applicability review. No dependencies, process, proxy or runtime flags. |
 | Redis | Unnecessary. PostgreSQL provides the existing persistence and transaction boundary. |
@@ -35,3 +35,11 @@ The EmbeddingGemma 2 account probe returned provisioning required. TF-IDF simila
 The backend release uses the existing private Railway build context and approved corpus. Public GitHub contains code, tests and aggregate reports only. The frontend requires no code changes. The schema upgrade adds two tables and nullable usage columns through migration `0003_faq_telemetry`. Roll back application behavior with the feature flags or restore the prior Railway deployment. Keep the additive migration in place during application rollback.
 
 See [benchmark data](TOKEN_OPTIMIZATION_BENCHMARKS.md) and [cache publication and rollback](CACHE_SECURITY_AND_INVALIDATION.md).
+
+## Changed code
+
+- Retrieval, prompts and request flow run through `app/rag/retriever.py`, `app/services/{context,prompts,chat_service}.py`, `app/main.py` and settings in `app/config.py` with `.env.example`.
+- FAQ publication and accounting use `app/services/{faq,usage}.py`, `app/db/models.py`, `app/cli.py` and `migrations/versions/0003_faq_telemetry.py`.
+- Anthropic request handling is in `app/clients/anthropic.py`. Replay and regressions are in `evaluation/{bilingual,token_optimization}.py` and `tests/unit/test_{answering_reliability,bilingual_providers,reviewed_faq}.py`.
+
+For production rollback set the relevant flag to `false` on the Railway backend and confirm its replacement deployment is healthy. If application rollback is required, restore the prior Railway deployment or build the prior verified Git commit with the authorized private corpus. Keep the additive schema in place. Vercel's proxy can verify backend health at `/api/v1/health`.
