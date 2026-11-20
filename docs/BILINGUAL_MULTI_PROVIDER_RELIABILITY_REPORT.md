@@ -56,15 +56,32 @@ From the backend directory with an authorized evaluation secret supplied private
 
 ```sh
 PYTHONPATH=. .venv/bin/python -m evaluation.bilingual_reliability \
-  --url https://digiyatra-chatbot-poc.vercel.app --rounds 2 --inr 100 --usd 2.4
+  --url https://digiyatra-chatbot-poc.vercel.app --rounds 2 --inr 100 --usd 2.4 --require-snapshot-lead
 ```
 
-The harness reserves a conservative retry-inclusive list-price ceiling and paces the shared rate-limit bucket. It publishes only grades and timing. The existing signed synthetic route keeps test activity out of user analytics. Response examples in this report are summaries. The private source text and raw test replies stay outside GitHub.
+The harness reserves a conservative retry-inclusive list-price ceiling and paces the shared rate-limit bucket. It interleaves providers and paces the shared and Anthropic-specific buckets. It publishes only grades and timing. The existing signed synthetic route keeps test activity out of user analytics. Response examples in this report are summaries. The private source text and raw test replies stay outside GitHub.
 
 ## Knowledge gaps
 
-The approved corpus lacks explicit store-download pricing, a Digi Yatra service-fee statement, and a per-stage offline capability matrix. The approved corpus establishes DigiLocker's enrollment relationship. Independent DigiLocker policies are outside that evidence. The public DigiLocker site describes its broader document-wallet purpose and can be reviewed as a separate source. The undated roadmap establishes a proposal only. Current international or ePassport availability requires an updated approved source. [Official DigiLocker overview](https://www.digilocker.gov.in/web/ecosystem)
+The approved corpus lacks explicit store-download pricing, a Digi Yatra service-fee statement, and a per-stage offline capability matrix. The public India App Store listing labels the iPhone download free. That is a candidate for source review and applies to the listed iPhone download only. [Official iPhone listing](https://apps.apple.com/in/app/digi-yatra/id6479873321) The approved corpus establishes DigiLocker's enrollment relationship. Independent DigiLocker policies are outside that evidence. The public DigiLocker site describes its broader document-wallet purpose and can be reviewed as a separate source. The undated roadmap establishes a proposal only. Current international or ePassport availability requires an updated approved source. [Official DigiLocker overview](https://www.digilocker.gov.in/web/ecosystem)
 
 ## International evidence freshness
 
 On November 1, 2026, the Ministry of Civil Aviation announced a limited international trial covering selected flights and eligible Indian ePassport holders. That release postdates this application's undated approved international snapshot. The application leads with the snapshot limitation, attributes supported scope and roadmap facts to the approved corpus, and does not present the older domestic description as today's complete policy. The ministry announcement is a source for content-owner review. It has not been added to the deployed corpus. [Ministry of Civil Aviation trial announcement](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2331200&lang=1&reg=1)
+
+## Deployment and final live verification
+
+Railway reports success for application commit `a3db97d`. The running backend's source hash matched that commit. The Vercel health proxy returned a healthy backend with 119 approved chunks and a migrated database. Anonymous admin analytics access returned HTTP 401. The existing configuration kept the reviewed FAQ and context optimizer off and Anthropic native prompt caching on. Deployment used the private allow-listed context and the original approved corpus. There was no schema change.
+
+| Provider | English, deployed | Hindi, deployed |
+| --- | --- | --- |
+| Sarvam | PASS 16/16 | PASS 16/16 |
+| Anthropic | PASS 16/16 | PASS 16/16 |
+
+The final paced run passed 64/64 substantive checks through Vercel to Railway, including two repeats per provider and language. This comprised 56 grounded responses and eight specific service-fee evidence-gap responses. There were zero false refusals in the 56 supported cases and zero terminal HTTP failures. Each test verified provider and locale, with the expected model checked on inferred answers. Download and connectivity responses passed specific qualification checks. International and ePassport responses put the freshness qualifier first. Final HTTPS P50/P95 were 1.769/2.780 seconds for Sarvam English, 1.844/2.622 seconds for Sarvam Hindi, 1.756/2.247 seconds for Anthropic English, and 2.387/2.790 seconds for Anthropic Hindi.
+
+The first release verification exposed the separate Anthropic rate limit and intermittent omissions in two international answers and one troubleshooting answer. The final release adds a bounded reattempt when documented coverage is missing and moves the international freshness qualification to the start. The final harness interleaves providers and passed without hitting the application limits. A targeted local replay of the three travel variants passed 24/24 with the freshness check.
+
+The final backend suite passed 528 tests, with 15 opt-in live tests deselected in the standard suite. The first verified release also passed all 528 tests on disposable PostgreSQL. Ten supplemental paid tests passed across the two providers, covering Android app availability, English/Hindi registration and complete 24-airport snapshots. Both provider modes also completed 122 offline preparation cases each. The amd64 backend image build and Railway runtime build passed. Frontend lint, type checks and the Next.js production build passed.
+
+A production browser check opened the chatbot, selected Sarvam English and Anthropic Hindi, and verified real cited answers rendered for each. Request interception added only the signed synthetic identity for analytics isolation. The browser still called the Vercel and Railway production route.
