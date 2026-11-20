@@ -145,6 +145,18 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("stats")
     sub.add_parser("probe-embeddings")
     sub.add_parser("db-upgrade")
+    from app.services.knowledge import SOURCES
+
+    verify = sub.add_parser("knowledge-verify")
+    verify.add_argument("source_id", choices=sorted(SOURCES))
+    verify.add_argument("--file", help="Operator-authenticated HTTPS capture for manual review")
+    review = sub.add_parser("knowledge-review")
+    review.add_argument("revision", type=int)
+    review.add_argument("decision", choices=("published", "rejected", "revoked"))
+    review.add_argument("--reviewer", required=True)
+    sub.add_parser("knowledge-inventory")
+    show = sub.add_parser("knowledge-inspect")
+    show.add_argument("revision", type=int)
     sub.add_parser("faq-version")
     faq_source = sub.add_parser("faq-source")
     faq_source.add_argument("chunk_id")
@@ -191,6 +203,38 @@ def main(argv: list[str] | None = None) -> None:
         (settings.index_dir.parent).mkdir(parents=True, exist_ok=True)  # backend/data for the SQLite file
         upgrade(settings.database_url)
         print("Database schema is up to date.")
+    elif args.cmd.startswith("knowledge-"):
+        from pathlib import Path
+
+        from app.db.session import Database
+        from app.services.knowledge import MAX_SOURCE_BYTES, Knowledge
+
+        db = Database(settings.database_url)
+        service = Knowledge(db)
+        try:
+            if args.cmd == "knowledge-verify":
+                if args.file:
+                    with Path(args.file).open("rb") as source:
+                        data = source.read(MAX_SOURCE_BYTES + 1)
+                    if len(data) > MAX_SOURCE_BYTES:
+                        raise ValueError("Source capture is too large")
+                    revision = service.verify(args.source_id, snapshot=data.decode("utf-8"))
+                else:
+                    if not settings.official_source_lookup_enabled:
+                        raise ValueError("OFFICIAL_SOURCE_LOOKUP_ENABLED is required for network fetch")
+                    revision = service.verify(args.source_id, auto_publish=settings.knowledge_auto_publish_enabled)
+                print(f"Verified source revision {revision}")
+            elif args.cmd == "knowledge-review":
+                service.review(args.revision, args.decision, args.reviewer)
+                print(f"Revision {args.revision}: {args.decision}")
+            elif args.cmd == "knowledge-inspect":
+                print(json.dumps(service.inspect(args.revision), ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(service.inventory(), ensure_ascii=False, indent=2))
+        except (KeyError, OSError, ValueError, RuntimeError) as exc:
+            sys.exit(f"Knowledge command failed: {exc}")
+        finally:
+            db.engine.dispose()
     elif args.cmd.startswith("faq-"):
         from pathlib import Path
 

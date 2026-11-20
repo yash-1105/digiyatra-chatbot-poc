@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     faq_cache_enabled: bool = False
     faq_cache_signing_key: SecretStr | None = None
     anthropic_rate_limit_requests: int = Field(default=10, ge=1, le=60)
+    general_knowledge_enabled: bool = True
+    conversational_answers_enabled: bool = False
+    knowledge_enrichment_enabled: bool = False
+    official_source_lookup_enabled: bool = False
+    knowledge_auto_publish_enabled: bool = False
     context_token_budget: int = Field(default=1800, ge=256, le=12000)
     context_top_k: int = Field(default=3, ge=1, le=10)
     prompt_token_budget: int = Field(default=6000, ge=512, le=16000)

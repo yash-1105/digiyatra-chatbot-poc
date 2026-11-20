@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -152,3 +152,31 @@ class ApprovedFAQ(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     signature: Mapped[str] = mapped_column(String(64), nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class KnowledgeRevision(Base):
+    """Operator-reviewed evidence. Chat requests cannot write source revisions."""
+    __tablename__ = "knowledge_revision"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic: Mapped[str] = mapped_column(String(40), index=True)
+    source_id: Mapped[str] = mapped_column(String(64))
+    digest: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    risk: Mapped[str] = mapped_column(String(16))
+    metadata_json: Mapped[dict] = mapped_column(JSON)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    reviewer: Mapped[str | None] = mapped_column(String(80))
+    __table_args__ = (
+        UniqueConstraint("source_id", "digest"),
+        Index("uq_knowledge_published_topic", "topic", unique=True,
+              sqlite_where=text("status = 'published'"), postgresql_where=text("status = 'published'")),
+    )
+
+
+class KnowledgeGap(Base):
+    """Aggregate topic candidates without a question, identity or model output."""
+    __tablename__ = "knowledge_gap"
+    topic: Mapped[str] = mapped_column(String(40), primary_key=True)
+    observations: Mapped[int] = mapped_column(Integer)
+    last_seen: Mapped[datetime] = mapped_column(DateTime)

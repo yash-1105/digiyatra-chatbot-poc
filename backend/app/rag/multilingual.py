@@ -8,7 +8,20 @@ import unicodedata
 # Query synonyms and claim concepts. Unknown Devanagari words remain visible to validation.
 TERMS = {
     "डिजी यात्रा": "digi yatra",
+    "एयर इंडिया": "air india", "इंडिगो": "indigo", "इण्डिगो": "indigo",
+    "चुनिंदा": "selected", "चयनित": "selected", "नागरिक": "nationals", "नागरिकों": "nationals",
+    "ई-पासपोर्ट धारक": "e-passport holders", "पात्र": "eligible", "ई-पासपोर्ट वाले": "holding e-passports",
+    "नवंबर": "november", "नवम्बर": "november", "दिसंबर": "december", "दिसम्बर": "december",
+    "समाप्त": "end", "परीक्षण": "trial", "सीमित": "limited", "अवधि": "period",
+    "नई दिल्ली": "delhi", "दिल्ली": "delhi", "बेंगलुरु": "bengaluru", "बंगलूरू": "bengaluru",
+    "हैदराबाद": "hyderabad", "कोच्चि": "cochin", "कोचीन": "cochin", "मुंबई": "mumbai",
+    "चेन्नई": "chennai", "अमृतसर": "amritsar", "सात": "seven",
+    "भाग लेने वाले": "participating", "शामिल": "participating", "टचपॉइंट्स": "touchpoints",
+    "विस्तार": "extension", "व्यापक रोलआउट": "wider rollout", "जारी रहने": "continuation",
+    "आधिकारिक दस्तावेज़": "official documents", "चिप": "chip", "डिजिटल दस्तावेज़": "digital documents",
+
     "डिजी लॉकर": "digilocker", "डिजीलॉकर ऐप": "digilocker app",
+    "बायोमेट्रिक सत्यापन": "biometric verification", "इमिग्रेशन": "immigration", "आव्रजन": "immigration",
     "फेस वेरिफिकेशन": "face verification", "चेहरे का सत्यापन": "face verification",
     "चेहरे की पहचान": "facial recognition", "चेहरे की जाँच": "face verification",
     "फेस": "face", "वेरिफिकेशन": "verification", "फेल": "fail", "असफल": "fail",
@@ -24,7 +37,7 @@ TERMS = {
     "चरण": "stage", "इस्तेमाल": "use", "उपयोग": "use",
     "हवाईअड्डों": "airports", "हवाईअड्डा": "airport", "हवाईअड्डे": "airport",
     "भारत": "india", "भारतीय": "indian", "विदेशी": "foreign",
-    "यात्री": "passengers", "यात्रियों": "passengers", "नागरिकों": "citizens",
+    "यात्री": "passengers", "यात्रियों": "passengers",
     "उड़ानें": "flights", "हवाई अड्डों से प्रस्थान": "departing from airports", "प्रस्थान करने वाली": "departing",
     "सिस्टम": "system", "प्रणाली": "system", "सिस्टम बंद": "system down", "सिस्टम डाउन": "system down",
     "सिस्टम ठप": "system down", "मैनुअल": "manual", "नियमित": "regular", "सामान्य": "regular",
@@ -60,8 +73,6 @@ TERMS = {
     "वेरिफायर": "verifier",
     "नोड": "node",
     "प्रतिधारण": "retention",
-    "अवधि": "period",
-    "सीमित": "limited",
     "रखा": "stored",
     "रखी": "stored",
     "कोई": "any",
@@ -398,6 +409,9 @@ def normalize_question(text: str) -> str:
         q,
     )
     q = re.sub(r"\b(otp|nfc|qr|android)\s+क्या\s+है", r"what is \1", q)
+    term = r"digilocker|e[- ]?passport|biometric verification|facial recognition"
+    if match := re.fullmatch(rf"(?:({term})\s+(?:क्या\s+है|kya hai)|क्या\s+है\s+({term}))[?.।!]*", q.strip()):
+        q = "what is " + (match.group(1) or match.group(2))
     if re.search(r"\baadhaar\b.{0,15}\bnot\b\s*(?:hai|है)?", q):
         q += " without aadhaar"
     # Hindi questions often omit an English verb: explicit platform concepts suffice.

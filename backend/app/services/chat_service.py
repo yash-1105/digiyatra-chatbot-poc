@@ -31,6 +31,7 @@ from app.services.answering import (
 from app.services.context import limited_history, optimized_context, select_context
 from app.services.conversation import ConversationStore, Turn
 from app.services.faq import ReviewedFAQs, faq_key
+from app.services.knowledge import TRIAL_TOPIC, Knowledge, supplemental_topic
 from app.services.localization import evidence_gap, fallback, notice
 from app.services.prompts import (
     CANARY,
@@ -130,6 +131,8 @@ class ChatDeps:
     providers: dict[str, ChatClient] | None = field(default=None)
     usage: UsageService | None = field(default=None)
     faqs: ReviewedFAQs | None = field(default=None)
+    knowledge: Knowledge | None = field(default=None)
+    track_gaps: bool = True
 
 
 def _is_follow_up(text: str) -> bool:
@@ -191,19 +194,22 @@ class ChatService:
     async def _general_answer(self, req: ChatRequest, topic: str, notices: list[str]) -> ChatResponse:
         result = await self._call_llm([
             {"role": "system", "content": general_system_prompt(topic, CANARY)},
-            {"role": "user", "content": req.message},
+            {"role": "user", "content": f"Define {topic} in plain language."},
         ], req)
         keys = [self.d.settings.sarvam_api_key, self.d.settings.anthropic_api_key, self.d.settings.faq_cache_signing_key]
         checked = check_output(result.content, n_sources=0, secrets=[key.get_secret_value() for key in keys if key],
                                canary=CANARY, allowed_urls=set(), allowed_url_prefixes=())
         # Never allow a definition to turn into an uncited Digi Yatra policy or invented source.
-        policy = re.search(r"(?i)\b(digi\s*yatra|aadhaar|airport|boarding|eligibility|retention|passport)\b", concepts(checked.text))
+        forbidden = r"digi\s*yatra|eligibility|retention|fees?|mandatory|immigration requirements"
+        if topic not in {"e-passport", "boarding pass QR code", "digilocker"}:
+            forbidden += r"|aadhaar|airport|boarding|passport"
+        policy = re.search(rf"(?i)\b({forbidden})\b", concepts(checked.text))
         if checked.leaked:
             return self._response(req, MSG_REFUSED, "refused", notices=notices, model=result.model)
         if not checked.text or policy or checked.invalid_citations or checked.removed_urls or checked.removed_actions:
             return self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model)
         answer = ("सामान्य जानकारी (डिजी यात्रा की नीति नहीं):\n\n" if req.locale == "hi" else "General explanation (not Digi Yatra policy):\n\n") + checked.text
-        self.d.conversations.append(req.conversation_id, req.message, checked.text)
+        self.d.conversations.append(req.conversation_id, assess_input(req.message).redacted_text, checked.text)
         response = self._response(req, answer, "answered", notices=notices, model=result.model)
         response.answer_mode = "general"
         return response
@@ -266,6 +272,8 @@ class ChatService:
                 cache_outcome = "context"
             elif a.pii_types or a.injection or a.live_status or a.action_request or a.greeting:
                 cache_outcome = "safety_or_dynamic"
+            elif self.d.knowledge and supplemental_topic(a.redacted_text, query_intent(a.redacted_text)):
+                cache_outcome = "supplemental_scope"
             elif not key:
                 cache_outcome = "unlisted"
             else:
@@ -289,6 +297,16 @@ class ChatService:
             await self._faq_metric(req, cache_outcome, started)
             await self._record(req, uuid.uuid4().hex, asked_at, classify_text, "error", 0, bool(a.pii_types), started)
             raise
+        if (self.d.knowledge and self.d.track_gaps and resp.status == "insufficient_evidence"
+            and a.domain_related and not (a.pii_types or a.injection or a.live_status or a.action_request)
+            and not restricted_request(a.redacted_text)):
+            intent = query_intent(a.redacted_text)
+            topic = supplemental_topic(a.redacted_text, intent) or intent or "other_digi_yatra"
+            try:
+                with anyio.move_on_after(0.35):
+                    await anyio.to_thread.run_sync(self.d.knowledge.gap, topic, abandon_on_cancel=True)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("knowledge gap write failed error=%s", type(exc).__name__)
         await self._faq_metric(req, cache_outcome, started)
         await self._record(req, resp.message_id, asked_at, classify_text, resp.status, len(resp.sources),
                            bool(a.pii_types), started)
@@ -358,15 +376,38 @@ class ChatService:
         if a.live_status:
             reason = "live_operation_request"
             return done(self._response(req, MSG_LIVE, "live_status", notices=notices))
-        if restriction := restricted_request(question):
+        supplemental = None
+        expired = None
+        topic_key = supplemental_topic(question, intent)
+        if self.d.knowledge and topic_key and not a.pii_types and not a.action_request:
+            try:
+                with anyio.move_on_after(0.35):
+                    supplemental, expired = await anyio.to_thread.run_sync(
+                        self.d.knowledge.lookup, topic_key, abandon_on_cancel=True,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("supplemental lookup failed error=%s", type(exc).__name__)
+        trial = bool(supplemental and topic_key == TRIAL_TOPIC)
+        if restriction := restricted_request(question, published_trial=trial or bool(expired)):
             reason = "restricted_account_or_policy_request"
             return done(self._response(req, restriction, "insufficient_evidence", notices=notices))
 
+        if expired and topic_key == TRIAL_TOPIC:
+            reason = "trial_source_expired"
+            text = (f"The published trial window ended on {expired}. I can't confirm an extension or wider availability. "
+                    "Check with your airline for your flight." if req.locale == "en" else
+                    f"घोषित ट्रायल की अवधि {expired} को समाप्त हुई। इसकी अवधि बढ़ने या व्यापक उपलब्धता की पुष्टि नहीं है। "
+                    "अपनी उड़ान के लिए एयरलाइन से जाँचें।")
+            response = no_evidence()
+            response.answer = text
+            return done(response)
+
         topic = general_topic(question)
-        if topic:
+        if topic and s.general_knowledge_enabled and not a.pii_types:
             # Definition requests are distinct from nearby troubleshooting FAQs.
             # If no approved source actually defines the term, use the narrow general mode.
-            definition_hits = self.d.retriever.search(question, s.retrieval_top_k)
+            stable_extension = topic in {"digilocker", "e-passport", "boarding pass QR code", "biometric verification"}
+            definition_hits = [] if stable_extension else self.d.retriever.search(question, s.retrieval_top_k)
             definition = re.compile(rf"(?i)\b{re.escape(topic)}\b.{{0,30}}\b(is|means|stands for|refers to)\b")
             if not any(definition.search(re.sub(r"^Q:.*?\nA:\s*", "", h.text, flags=re.S)) for h in definition_hits):
                 reason = "allowlisted_general_definition"
@@ -389,7 +430,9 @@ class ChatService:
         if summary and _is_follow_up(question) and not query_intent(question):
             retrieval_query = summary + " " + retrieval_query
         search = self.d.retriever.retry_search if retrieval_retry else self.d.retriever.search
-        if s.rag_context_optimization_enabled:
+        if trial:
+            candidates = hits = [supplemental]
+        elif s.rag_context_optimization_enabled:
             expand = retrieval_retry or intent in {"airport_catalog", "airport_planned"}
             requested = max(s.retrieval_top_k, s.rag_expanded_top_k) if expand else s.retrieval_top_k
             candidates = search(retrieval_query, requested)
@@ -402,6 +445,8 @@ class ChatService:
         else:
             candidates = search(retrieval_query, s.retrieval_top_k)
             hits = select_context(candidates, s.context_token_budget, s.context_top_k)
+        if supplemental and not trial:
+            hits = select_context([supplemental, *hits], s.context_token_budget, s.context_top_k)
         log.info("chat retrieval provider=%s locale=%s retry=%s candidates=%d selected=%d",
                  req.provider, req.locale, retrieval_retry, len(candidates), len(hits))
         same_evidence = retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set())
@@ -434,7 +479,9 @@ class ChatService:
             messages.append({"role": "user", "content": "Earlier topic hints only, not evidence: " + summary})
         for t in bounded_history:
             messages.append({"role": t.role, "content": t.content})
-        turn = build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled)
+        turn = build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled, trial=trial)
+        if s.conversational_answers_enabled:
+            turn += "\nLead with the answer in everyday language. Use 1–4 sentences for simple questions. Avoid source narration."
         if same_evidence:
             turn += (
                 "\nGive the applicable supported facts first, one short sentence per point with the matching source marker. "
@@ -481,7 +528,8 @@ class ChatService:
 
         # Sentence-level grounding: every factual sentence must be supported by the evidence it cites.
         grounded = ground_answer(
-            checked.text, {k: hit - 1 for k, hit in enumerate(checked.cited, 1)}, [h.text for h in hits]
+            checked.text, {k: hit - 1 for k, hit in enumerate(checked.cited, 1)}, [h.text for h in hits],
+            verified_current=frozenset({0}) if trial else frozenset(),
         )
         if grounded.dropped or grounded.reattributed or grounded.removed_markers:
             log.info("chat grounding dropped=%d reattributed=%d removed_markers=%d",
@@ -490,7 +538,7 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
-        if not retrieval_retry and not scoped_answer_complete(intent, checked.text, question):
+        if not trial and not retrieval_retry and not scoped_answer_complete(intent, checked.text, question):
             log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=missing_documented_scope retry=False",
                      req.provider, req.locale, intent)
             try:
@@ -514,7 +562,7 @@ class ChatService:
         if any(c.time_sensitive for c in cited_chunks):
             notices.append(NOTICE_TIME_SENSITIVE)
 
-        gap = evidence_gap(intent, req.locale)
+        gap = "" if trial else evidence_gap(intent, req.locale)
         if intent in {"download_cost", "service_cost"} and any(
             pricing_claim(h.text.partition("\nA: ")[2] if h.question else h.text) for h in cited_chunks
         ):
@@ -523,7 +571,7 @@ class ChatService:
             gap = ""
         if gap:
             checked.text += "\n\n" + gap
-        qualification = snapshot_note(cited_chunks, req.locale, documented_policy=intent in {
+        qualification = "" if trial else snapshot_note(cited_chunks, req.locale, documented_policy=intent in {
             "airport_retention", "international_scope", "epassport_scope",
         })
         if qualification:
@@ -536,4 +584,28 @@ class ChatService:
         # A lead qualification can coexist with useful, grounded partial guidance.
         partial = intent in {"download_cost", "connectivity", "epassport_scope"}
         status = "insufficient_evidence" if _DECLINE.match(checked.text) and not partial else "answered"
+        if trial and supplemental:
+            normalized_answer = normalize_query(checked.text)
+            conditions = []
+            hindi = req.locale == "hi"
+            if eligibility := supplemental.extra.get("eligibility"):
+                if not all(term in normalized_answer for term in ("indian", "passport")):
+                    conditions.append(eligibility[hindi])
+            if ends := supplemental.extra.get("ends"):
+                if ends[:4] not in normalized_answer:
+                    conditions.append(f"घोषित ट्रायल {ends} तक है।" if hindi else f"The announced trial runs through {ends}.")
+            if travel_checks := supplemental.extra.get("travel_checks"):
+                if "immigration" not in normalized_answer:
+                    conditions.append(travel_checks[hindi])
+            if conditions:
+                checked.text += "\n\n" + " ".join(conditions)
+        if trial and s.conversational_answers_enabled:
+            # One primary citation is enough in the visible reply. All sentences were grounded above.
+            first = re.search(r"\[\d+\]", checked.text)
+            if first:
+                checked.text = checked.text[:first.end()] + re.sub(r"[ \t]*\[\d+\]", "", checked.text[first.end():])
+        if (s.conversational_answers_enabled and status == "answered"
+            and intent in {"app_download", "boarding_upload", "boarding_scan", "boarding_pdf", "digilocker_comparison"}
+            and all(not h.time_sensitive and not h.conflict_ids for h in cited_chunks)):
+            checked.text = re.sub(r"[ \t]*\[\d+\](?:[ \t]*\[\d+\])*", "", checked.text)
         return done(self._response(req, checked.text, status, sources=sources, notices=notices, model=result.model), top)

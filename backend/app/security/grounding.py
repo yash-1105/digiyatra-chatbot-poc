@@ -112,7 +112,7 @@ def _numbers_ok(sentence: str, evidence_texts: list[str]) -> bool:
     return all(re.search(rf"(?<![\d.]){re.escape(n)}(?![\d])", pool) for n in nums)
 
 
-def _polarity_ok(sentence: str, evidence: str) -> bool:
+def _polarity_ok(sentence: str, evidence: str, *, verified_current=False) -> bool:
     """Reject common policy reversals that bag-of-words overlap alone cannot detect.
 
     This supplements lexical support; it is deliberately not a semantic entailment model.
@@ -138,7 +138,15 @@ def _polarity_ok(sentence: str, evidence: str) -> bool:
             return False
         if "roadmap" in answer and not re.search(r"\b(roadmap|future|plans?|propos\w*|not)\b", claim):
             return False
-    if re.search(r"\binternational (?:flights?|travel|passengers?)\b", claim):
+    if verified_current and re.search(r"\b(?:all|every|any) international flights?\b", claim) and not re.search(
+        r"\b(not|no|cannot|only)\b", claim
+    ):
+        return False
+    if verified_current and "immigration" in claim and re.search(
+        r"\b(skip immigration|no immigration|immigration.{0,25}not (?:required|needed)|replaces immigration)\b", claim
+    ):
+        return False
+    if not verified_current and re.search(r"\binternational (?:flights?|travel|passengers?)\b", claim):
         if re.search(r"\b(?:available|supports?|works?|can use)\b", claim) and not re.search(
             r"\b(not|no|cannot|only|roadmap|future|plans?|propos\w*)\b", claim
         ):
@@ -175,7 +183,8 @@ def _polarity_ok(sentence: str, evidence: str) -> bool:
     return True
 
 
-def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str]) -> GroundingResult:
+def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str],
+                  *, verified_current: frozenset[int] = frozenset()) -> GroundingResult:
     """`text` uses [n] markers; marker_to_hit maps n -> 0-based evidence index. Returns re-numbered text."""
     ev_tokens = [evidence_tokens(e) for e in evidence]
     res = GroundingResult(text="", cited_hits=[])
@@ -197,19 +206,19 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
             continue
         words = _content(body)
         factual = len(words) >= MIN_FACTUAL_TOKENS and not _ADVISORY.match(body) and not _DECLINE.match(body)
-        if any(not _polarity_ok(body, evidence[h]) for h in (hits or list(range(len(evidence))))):
+        if any(not _polarity_ok(body, evidence[h], verified_current=h in verified_current) for h in (hits or list(range(len(evidence))))):
             factual = True
 
         if not factual:
             keep = hits  # connective / advisory text: leave its markers untouched
         else:
             keep = [
-                h for h in hits if _support(words, ev_tokens[h]) >= KEEP_SUPPORT and _polarity_ok(body, evidence[h])
+                h for h in hits if _support(words, ev_tokens[h]) >= KEEP_SUPPORT and _polarity_ok(body, evidence[h], verified_current=h in verified_current)
             ]
             res.removed_markers += len(hits) - len(keep)
             if not keep:
                 best = max(
-                    (i for i in range(len(evidence)) if _polarity_ok(body, evidence[i])),
+                    (i for i in range(len(evidence)) if _polarity_ok(body, evidence[i], verified_current=i in verified_current)),
                     key=lambda i: _support(words, ev_tokens[i]),
                     default=None,
                 )

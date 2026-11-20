@@ -31,7 +31,7 @@ async def chat(body: ChatRequest, request: Request, response: Response) -> ChatR
     service = st.chat_service
     public_id = body.conversation_id
     if await synthetic_request(request, body.conversation_id):
-        service = ChatService(replace(service.d, analytics=None, usage=None, conversations=st.evaluation_conversations))
+        service = ChatService(replace(service.d, analytics=None, usage=None, track_gaps=False, conversations=st.evaluation_conversations))
         response.headers["x-dy-evaluation"] = "synthetic"
     scoped_id = conversation_scope(request, body.conversation_id, response)
     body = body.model_copy(update={"conversation_id": scoped_id})

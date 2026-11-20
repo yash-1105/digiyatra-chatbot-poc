@@ -64,13 +64,23 @@ def procedure_requested(question: str) -> bool:
     )
 
 
-def build_user_turn(question: str, evidence: str, *, compact: bool = False) -> str:
+def build_user_turn(question: str, evidence: str, *, compact: bool = False, trial: bool = False) -> str:
     if query_intent(question) == "app_download":
         # Resolve the platform, without promising compatibility with every model.
         question = re.sub(r"(?i)\b(samsung|oneplus|pixel)\b", "Android phone", question)
     intent = query_intent(question)
     specific = ""
-    if intent == "organization":
+    if trial:
+        specific = (
+            " Answer from the cited public announcement. For a general availability question, lead with Yes, "
+            "for selected flights in a limited trial. State the end month/year, Indian e-passport eligibility, "
+            "participating airports or number, and both airlines. Keep normal document and immigration checks explicit. "
+            "For a specific flight, clarify that participation must be checked with the airline. "
+            "After the trial, no continuation or rollout is confirmed by this source. "
+            "If asked about NFC, scope it to reading the e-passport chip during trial enrollment. "
+            "Answer in 1–4 short sentences. Keep one source marker per factual sentence for validation."
+        )
+    elif intent == "organization":
         specific = " In 2–3 sentences explain the documented operator/legal structure and its relationship to government policy/framework, wherever supported. This distinguishes the operator from a government department without asserting unknown ownership. Omit unrelated RTI claims, company history, equity percentages or legal conclusions. Answer supported organizational facts even if other requested details are unknown."
     elif intent in {"airport_catalog", "airport_planned"}:
         specific = " Report the documented airport snapshot, not live availability. For a list request, include every relevant documented entry on its own numbered line with its exact original airport name and parenthesized IATA code; keep those proper names in English even in Hindi answers. Do not substitute a list of cities or mix planned airports with the supported snapshot. This complete list may exceed the usual 140-word limit. Cite each entry. Supply the official verification link from evidence."
@@ -96,7 +106,8 @@ def build_user_turn(question: str, evidence: str, *, compact: bool = False) -> s
         specific = (
             " Explain separately what Digi Yatra does and what DigiLocker is used for in its registration. "
             " Write one stand-alone cited sentence about Digi Yatra's facial identity check at the airport. "
-            " Then write a separate cited sentence about using DigiLocker to link Aadhaar during app registration. "
+            " If supplied, use a separate cited statement defining DigiLocker as a document wallet. "
+            " Then briefly explain the documented Aadhaar linkage during Digi Yatra registration. "
             " Do not join the two claims into one sentence. "
             " Do not claim third-party features or policies beyond the sources."
         )

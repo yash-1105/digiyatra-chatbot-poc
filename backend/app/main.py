@@ -128,9 +128,12 @@ def create_app(
                 reviewed_faqs = ReviewedFAQs(app.state.db, settings, retriever)
             except Exception as exc:  # noqa: BLE001 - a broken cache must not block startup
                 log.warning("faq unavailable error=%s", type(exc).__name__)
+        from app.services.knowledge import Knowledge
+
+        knowledge = Knowledge(app.state.db) if migrated and settings.knowledge_enrichment_enabled else None
         app.state.chat_service = ChatService(
             ChatDeps(settings, retriever, app.state.llm, ConversationStore(), _conflict_guidance(settings),
-                     analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage, faqs=reviewed_faqs)
+                     analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage, faqs=reviewed_faqs, knowledge=knowledge)
         )
         log.info("Knowledge index loaded: %d approved chunks", retriever.chunk_count)
     except (IndexNotBuilt, RuntimeError) as exc:

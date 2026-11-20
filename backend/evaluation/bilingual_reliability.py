@@ -85,11 +85,11 @@ def grade(case, provider, locale, response, *, require_snapshot_lead=False):
     return results
 
 
-def deployed(args):
+def deployed(args, catalog=SCREENSHOT_CASES):
     """Drive the signed route within the deployed rate limits and a conservative list-price budget."""
     if not (math.isfinite(args.inr) and math.isfinite(args.usd) and args.inr > 0 and args.usd > 0):
         raise SystemExit("Live matrix requires positive --inr and --usd caps")
-    cases = [case for case in SCREENSHOT_CASES if not args.only or case[0] in args.only]
+    cases = [case for case in catalog if not args.only or case[0] in args.only]
     # Production limits as of this release. Includes two generations, citation repair after
     # each, HTTP retries, byte ceiling and full output allowance at published rates.
     estimate = len(cases) * 2 * args.rounds
