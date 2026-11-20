@@ -15,17 +15,23 @@ from app.clients.base import ChatClient, ProviderError
 from app.config import Settings
 from app.db.session import utcnow
 from app.rag.multilingual import concepts
-from app.rag.query import INTENT_TERMS, normalize_query, query_intent
+from app.rag.query import INTENT_TERMS, SCOPED_INTENTS, connectivity_claim, normalize_query, pricing_claim, query_intent
 from app.rag.retriever import RetrievedChunk, Retriever
 from app.schemas.chat import ChatRequest, ChatResponse, Source
 from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, check_output, pii_notice
 from app.services.analytics import AnalyticsService
-from app.services.answering import general_system_prompt, general_topic, restricted_request, snapshot_note
+from app.services.answering import (
+    comparison_has_both_roles,
+    general_system_prompt,
+    general_topic,
+    restricted_request,
+    snapshot_note,
+)
 from app.services.context import limited_history, optimized_context, select_context
 from app.services.conversation import ConversationStore, Turn
 from app.services.faq import ReviewedFAQs, faq_key
-from app.services.localization import fallback, notice
+from app.services.localization import evidence_gap, fallback, notice
 from app.services.prompts import (
     CANARY,
     CITATION_REPAIR,
@@ -102,6 +108,8 @@ class AssistantUnavailable(RuntimeError):
 _ERROR_MAP = {
     "not_configured": (503, "The AI assistant is not configured on this server yet."),
     "auth": (503, "The AI assistant is temporarily unavailable. Please try again later."),
+    "workspace": (503, "The selected AI provider is temporarily unavailable. Please try again later."),
+    "model_access": (503, "The selected AI model is temporarily unavailable. Please try again later."),
     "quota": (503, "The AI assistant is temporarily unavailable. Please try again later."),
     "rate_limited": (503, "The assistant is receiving too many requests. Please wait a moment and try again."),
     "bad_request": (502, "The assistant could not process this request. Please rephrase and try again."),
@@ -231,7 +239,7 @@ class ChatService:
             result = await client.chat(messages, session_id=req.conversation_id)
         except ProviderError as exc:
             await self._usage(req, client, exc.usage, "error", int((time.perf_counter()-started)*1000),
-                              0 if exc.kind in {"auth", "quota", "not_configured", "bad_request"} else estimate,
+                              0 if exc.kind in {"auth", "workspace", "model_access", "quota", "not_configured", "bad_request"} else estimate,
                               error=exc.kind, retrieval=retrieval)
             code, msg = _ERROR_MAP.get(exc.kind, (503, "The selected AI provider is temporarily unavailable."))
             if req.locale == "hi":
@@ -323,7 +331,14 @@ class ChatService:
             log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=%s retry=%s", req.provider, req.locale, intent or "none", why, retrieval_retry)
             if not retrieval_retry:
                 return await self._handle(req, retrieval_retry=True, previous_evidence={h.chunk_id for h in hits})
-            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=model), top)
+            return done(no_evidence(model), top)
+
+        def no_evidence(model=None):
+            response = self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=model)
+            gap = evidence_gap(intent, req.locale)
+            if gap:
+                response.answer = gap
+            return response
 
         def done(resp: ChatResponse, top: float = 0.0) -> ChatResponse:
             log.info(
@@ -389,9 +404,13 @@ class ChatService:
             hits = select_context(candidates, s.context_token_budget, s.context_top_k)
         log.info("chat retrieval provider=%s locale=%s retry=%s candidates=%d selected=%d",
                  req.provider, req.locale, retrieval_retry, len(candidates), len(hits))
-        if retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set()):
+        same_evidence = retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set())
+        if same_evidence and (not hits or intent not in SCOPED_INTENTS):
             reason = "retry_no_new_evidence"
-            return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices))
+            return done(no_evidence())
+        if not hits and intent == "service_cost":
+            reason = "no_approved_service_pricing"
+            return done(no_evidence())
         top = hits[0].score if hits else 0.0
         # Absence of evidence for a named requirement is not evidence that it
         # is unnecessary. In particular, general NFC definitions cannot answer
@@ -415,7 +434,13 @@ class ChatService:
             messages.append({"role": "user", "content": "Earlier topic hints only, not evidence: " + summary})
         for t in bounded_history:
             messages.append({"role": t.role, "content": t.content})
-        messages.append({"role": "user", "content": build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled)})
+        turn = build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled)
+        if same_evidence:
+            turn += (
+                "\nGive the applicable supported facts first, one short sentence per point with the matching source marker. "
+                "Leave unsupported details to the application when the documents give useful partial guidance."
+            )
+        messages.append({"role": "user", "content": turn})
 
         result = await self._call_llm(messages, req, retrieval=estimate_tokens(evidence))
         if INSUFFICIENT not in result.content.upper() and not re.search(r"\[\s*S?\s*\d+", result.content):
@@ -465,6 +490,16 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
+        if intent == "digilocker_comparison" and not retrieval_retry and not comparison_has_both_roles(checked.text):
+            log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=missing_comparison_role retry=False",
+                     req.provider, req.locale, intent)
+            try:
+                retry = await self._handle(req, retrieval_retry=True, previous_evidence={h.chunk_id for h in hits})
+            except AssistantUnavailable:
+                pass  # A failed second attempt does not erase the first grounded answer.
+            else:
+                if retry.status == "answered":
+                    return retry
         if procedure_requested(question) and not re.search(r"(?m)^\d+[.)]\s", checked.text):
             sentences = re.split(r"(?<=[.!?।])\s+", checked.text)
             if len(sentences) >= 2:
@@ -479,10 +514,23 @@ class ChatService:
         if any(c.time_sensitive for c in cited_chunks):
             notices.append(NOTICE_TIME_SENSITIVE)
 
-        qualification = snapshot_note(cited_chunks, req.locale, documented_policy=intent == "airport_retention")
+        gap = evidence_gap(intent, req.locale)
+        if intent in {"download_cost", "service_cost"} and any(
+            pricing_claim(h.text.partition("\nA: ")[2] if h.question else h.text) for h in cited_chunks
+        ):
+            gap = ""
+        if intent == "connectivity" and any(connectivity_claim(h.text) for h in cited_chunks):
+            gap = ""
+        if gap:
+            checked.text += "\n\n" + gap
+        qualification = snapshot_note(cited_chunks, req.locale, documented_policy=intent in {
+            "airport_retention", "international_scope", "epassport_scope",
+        })
         if qualification:
             checked.text += "\n\n" + qualification
         reason = "documented_snapshot" if qualification else "grounded_answer"
         self.d.conversations.append(req.conversation_id, question, _strip_markers(checked.text))
-        status = "insufficient_evidence" if _DECLINE.match(checked.text) else "answered"
+        # A lead qualification can coexist with useful, grounded partial guidance.
+        partial = intent in {"download_cost", "connectivity", "epassport_scope"}
+        status = "insufficient_evidence" if _DECLINE.match(checked.text) and not partial else "answered"
         return done(self._response(req, checked.text, status, sources=sources, notices=notices, model=result.model), top)

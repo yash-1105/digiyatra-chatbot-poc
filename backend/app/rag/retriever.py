@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 
 from app.rag.embeddings import Embedder, features, tokenize
-from app.rag.query import INTENT_TERMS, intent_match, normalize_query, query_intent
+from app.rag.query import INTENT_TERMS, SCOPED_INTENTS, intent_match, normalize_query, query_intent
 from app.rag.store import KnowledgeIndex
 
 # Query expansion for common passenger phrasings (applied to keyword ranking only).
@@ -238,8 +238,12 @@ class Retriever:
                     category=c.get("category") or "",
                 )
             )
-        scored.sort(key=lambda r: (r.score, intent_match(intent, {"text": r.text}),
+        scored.sort(key=lambda r: ((intent_match(intent, {"text": r.text}) if intent in SCOPED_INTENTS else r.score),
+                                   (r.score if intent in SCOPED_INTENTS else intent_match(intent, {"text": r.text})),
                                    r.keyword_score, r.vector_score, r.chunk_id), reverse=True)
+
+        if intent in SCOPED_INTENTS:
+            scored = [r for r in scored if intent_match(intent, {"text": r.text})]
 
         # Platform/download questions need store evidence, not nearby device-error FAQs.
         if intent in {"app_download", "boarding_upload", "boarding_pdf", "boarding_scan", "airport_catalog", "airport_planned"}:
@@ -291,7 +295,7 @@ class Retriever:
     def retry_search(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
         """Second lexical/FAQ phrasing pass, with identical approval and score filters."""
         intent = query_intent(query)
-        alternate = INTENT_TERMS.get(intent, expand_query(query))
+        alternate = query if intent in SCOPED_INTENTS else INTENT_TERMS.get(intent, expand_query(query))
         hits = self.search(alternate, max(top_k, 10))
         hits.sort(key=lambda h: (bool(h.question), intent_match(intent, {"text": h.text}), h.score), reverse=True)
         return hits[:top_k]

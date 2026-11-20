@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-ErrorKind = Literal["not_configured", "auth", "quota", "rate_limited", "bad_request", "unavailable", "timeout", "empty"]
+ErrorKind = Literal["not_configured", "auth", "workspace", "model_access", "quota", "rate_limited", "bad_request", "unavailable", "timeout", "empty"]
 
 
 class ProviderError(RuntimeError):

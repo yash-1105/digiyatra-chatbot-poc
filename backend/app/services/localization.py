@@ -35,3 +35,27 @@ def notice(text: str) -> str:
     if "can't file" in text:
         return "मैं आपकी ओर से शिकायत दर्ज नहीं कर सकता। आधिकारिक सहायता से संपर्क करें और आधार नंबर या ओटीपी साझा न करें।"
     return text
+
+
+_EVIDENCE_GAPS = {
+    "download_cost": (
+        "The approved information does not specify the download price. Check the current price in your app store. Airfare and other travel costs are separate.",
+        "स्वीकृत जानकारी में ऐप डाउनलोड का शुल्क नहीं बताया गया है। मौजूदा कीमत अपने ऐप स्टोर में देखें। हवाई टिकट और यात्रा के दूसरे खर्च अलग हैं।",
+    ),
+    "service_cost": (
+        "The approved information does not specify whether Digi Yatra charges a fee for using the service. This is separate from the app download and other travel costs.",
+        "स्वीकृत जानकारी में यह नहीं बताया गया है कि डिजी यात्रा सेवा इस्तेमाल करने का कोई शुल्क है या नहीं। ऐप डाउनलोड और यात्रा के दूसरे खर्च अलग हैं।",
+    ),
+    "connectivity": (
+        "The approved information does not specify which of these steps can be completed without internet on your phone.",
+        "स्वीकृत जानकारी में यह नहीं बताया गया है कि इनमें से कौन-से चरण फ़ोन पर बिना इंटरनेट के पूरे हो सकते हैं।",
+    ),
+    "epassport_scope": (
+        "I cannot verify live availability for ePassport-based travel. Check with your airline before you travel.",
+        "ई-पासपोर्ट से यात्रा की मौजूदा उपलब्धता की पुष्टि नहीं है। यात्रा से पहले अपनी एयरलाइन से जाँचें।",
+    ),
+}
+
+
+def evidence_gap(intent: str | None, locale: str) -> str:
+    return _EVIDENCE_GAPS.get(intent, ("", ""))[locale == "hi"]

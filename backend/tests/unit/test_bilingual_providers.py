@@ -99,6 +99,7 @@ def test_anthropic_official_payload_and_usage():
     client = AnthropicChatClient("fake-secret", max_tokens=800, prompt_cache=True)
     payload = client._payload([{"role": "system", "content": "Safety " * 400}, {"role": "user", "content": "hello"}])
     assert payload["model"] == "claude-haiku-5-5"
+    assert payload["thinking"] == {"type": "disabled"}
     assert payload["output_config"] == {"effort": "low"} and payload["max_tokens"] == 800
     assert not {"temperature", "top_p", "top_k", "reasoning_effort"} & payload.keys()
     assert "cache_control" in payload["system"][0]

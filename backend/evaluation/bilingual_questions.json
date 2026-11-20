@@ -214,8 +214,8 @@
     "id": "international_hinglish",
     "question": "Digi Yatra international flight par use kar sakta hoon?",
     "locale": "hi",
-    "mode": "insufficient",
-    "concepts": []
+    "mode": "knowledge",
+    "concepts": ["domestic"]
   },
   {
     "id": "injection_hi",

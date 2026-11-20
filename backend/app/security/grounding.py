@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 from app.rag.embeddings import tokenize
 from app.rag.multilingual import concepts
-from app.rag.query import evidence_tokens
+from app.rag.query import connectivity_claim, evidence_tokens, pricing_claim
 
 KEEP_SUPPORT = 0.4  # min share of a sentence's content words found in a cited source
 REATTRIBUTE_SUPPORT = 0.5  # stricter bar for moving a sentence to a different / uncited source
@@ -67,6 +67,9 @@ class GroundingResult:
 
 def _split(text: str) -> list[str]:
     """Split into sentences; markers written after the full stop ("…OTP. [1]") stay with their sentence."""
+    # Providers sometimes emit standalone citation lines. Attach them to the
+    # previous sentence so an orphan marker cannot make an answer appear grounded.
+    text = re.sub(r"(?m)(?<=\S)(?:[ \t]*\n)+[ \t]*(?=\[\d+\])", " ", text)
     out: list[str] = []
     for line in text.splitlines(keepends=True):
         para = line.rstrip("\r\n")
@@ -124,6 +127,22 @@ def _polarity_ok(sentence: str, evidence: str) -> bool:
     anchors = evidence_tokens("NFC OTP QR Android iOS iPhone DigiLocker Aadhaar PDF JPEG PNG lounge payment")
     if (evidence_tokens(claim) & anchors) - evidence_tokens(answer):
         return False
+    if ("free" in evidence_tokens(claim) or pricing_claim(claim)) and not pricing_claim(answer):
+        # Marketing compounds such as "hassle-free" never authorize product pricing.
+        if not re.search(r"\b(?:hassle|paper|contact|touch|risk)[- ]free\b", claim):
+            return False
+    if connectivity_claim(claim) and not connectivity_claim(answer):
+        return False
+    if re.search(r"\be[- ]?passport\b", claim):
+        if not re.search(r"\be[- ]?passports?\b", answer):
+            return False
+        if "roadmap" in answer and not re.search(r"\b(roadmap|future|plans?|propos\w*|not)\b", claim):
+            return False
+    if re.search(r"\binternational (?:flights?|travel|passengers?)\b", claim):
+        if re.search(r"\b(?:available|supports?|works?|can use)\b", claim) and not re.search(
+            r"\b(not|no|cannot|only|roadmap|future|plans?|propos\w*)\b", claim
+        ):
+            return False
     # Validate a catalog entry against its own approved code/name pair. Sharing
     # generic words such as "International Airport" cannot establish a new entry.
     catalog_source = re.sub(r"^Q:.*?(?:\n| )A:\s*", "", evidence, flags=re.S)
@@ -174,6 +193,8 @@ def ground_answer(text: str, marker_to_hit: dict[int, int], evidence: list[str])
         hits = list(dict.fromkeys(hits))
         body = _MARKER.sub("", sent).rstrip()
         body = re.sub(r"\s+([.,;:!?])", r"\1", body)
+        if not re.search(r"\w", body):
+            continue
         words = _content(body)
         factual = len(words) >= MIN_FACTUAL_TOKENS and not _ADVISORY.match(body) and not _DECLINE.match(body)
         if any(not _polarity_ok(body, evidence[h]) for h in (hits or list(range(len(evidence))))):

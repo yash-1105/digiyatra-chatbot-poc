@@ -239,10 +239,10 @@
   {
     "id": "international",
     "question": "Can I use Digi Yatra for international travel?",
-    "mode": "insufficient",
+    "mode": "knowledge",
     "concepts": [
       [
-        "international"
+        "domestic"
       ],
       [
         "confirm",

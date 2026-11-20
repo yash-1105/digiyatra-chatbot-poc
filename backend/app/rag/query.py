@@ -28,6 +28,23 @@ def normalize_query(text: str) -> str:
 
 def query_intent(text: str) -> str | None:
     q = normalize_query(text)
+    if re.search(r"\be[- ]?passports?\b", q) and re.search(r"\b(digi yatra|international|travel)\b", q):
+        return "epassport_scope"
+    if re.search(r"\b(?:international (?:flights?|travel|passengers?|journeys?)|abroad|overseas)\b", q):
+        return "international_scope"
+    if "digi yatra" in q and re.search(r"\b(price|pricing|costs?|fees?|charg(?:e|es|ed)|free|money|pay)\b", q):
+        if re.search(r"\b(download|install)\b", q):
+            return "download_cost"
+        if not re.search(r"\b(baggage|luggage|fare|flight ticket|parking|cancellation|register\w*|registration|lounge)\b", q):
+            return "service_cost"
+    if (re.search(r"\b(internet|wifi|wi-fi|offline|mobile data)\b", q)
+            and re.search(r"\b(without|offline|needs?|require\w*|necessary|connection|not|required)\b", q)
+            and not re.search(r"\b(offline aadhaar|otp|login error)\b", q)):
+        return "connectivity"
+    if "digilocker" in q and re.search(r"\b(difference|different|compare|vs|versus|same)\b", q):
+        return "digilocker_comparison"
+    if re.search(r"\b(face|facial|biometric)\b", q) and re.search(r"\b(verification|recognition|validation|match|scan)\b", q) and re.search(r"\b(fail\w*|error|not work\w*|not match\w*)\b", q):
+        return "face_verification"
     if re.search(r"\b(airport|airports|cities)\b", q) and re.search(r"\b(data|biometric|biometrics)\b", q) and re.search(r"\b(retain\w*|retention|stored|storage|purge|delete|long|hours?)\b", q):
         return "airport_retention"
     if re.search(r"\b(airport|airports|cities)\b", q) and re.search(r"\b(which|list|support\w*|available|availability|where|upcoming|planned|future)\b", q):
@@ -67,6 +84,14 @@ def query_intent(text: str) -> str | None:
 
 
 INTENT_TERMS = {
+    "download_cost": "app download free app store google play price fee",
+    "service_cost": "service fee free of charge cost to use",
+    "connectivity": "internet connection offline registration boarding pass share airport facial verification",
+    "international_scope": "international flights domestic flights departing supported airports integration roadmap",
+    "epassport_scope": "international passengers e-passport enrollment roadmap domestic flights",
+    "face_verification": "face validation selfie capture lighting plain background glasses steady gate regular manual system down",
+    "digilocker_comparison": "DigiLocker Aadhaar link register Digi Yatra airport facial verification digital credential",
+
     "organization": "operator operated foundation not for profit company section 8 industry led ministry civil aviation framework",
     "airport_catalog": "which airports currently support available supported airports documented list",
     "airport_planned": "which airports planned future upcoming implementation",
@@ -85,8 +110,66 @@ INTENT_TERMS = {
 }
 
 
+SCOPED_INTENTS = frozenset({
+    "download_cost", "service_cost", "connectivity", "international_scope",
+    "epassport_scope", "face_verification", "digilocker_comparison",
+})
+
+
+def pricing_claim(text: str) -> bool:
+    return bool(re.search(r"\b(?:free of charge|free to (?:download|use|install)|no (?:fee|charge)s?|"
+                          r"(?:download|service|usage) (?:fee|charge)s?|(?:pay|cost)\s+(?:₹|rs\b|inr\b|\d))", text, re.I))
+
+
+def connectivity_claim(text: str) -> bool:
+    return bool(re.search(r"\b(?:requires?|needs?) (?:an? )?(?:(?:active|stable|working) )?(?:internet|wi-fi|network)\b|"
+                          r"\b(?:works?|use) (?:fully )?offline\b|"
+                          r"\b(?:works?|use) without (?:an? )?internet\b", text, re.I))
+
+
+def scoped_match(intent: str, raw: str) -> float:
+    text = normalize_query(re.sub(r"^Q:.*?(?:\n| )A:\s*", "", raw, flags=re.S))
+    if intent in {"download_cost", "service_cost"}:
+        if pricing_claim(text):
+            relevant = "download" in text or "install" in text
+            return 1.15 if relevant == (intent == "download_cost") else 0.0
+        return float(intent == "download_cost" and "play.google.com/" in text and "apps.apple.com/" in text)
+    if intent in {"international_scope", "epassport_scope"}:
+        domestic = "domestic flights" in text and ("supported airports" in text or "integration may vary" in text)
+        roadmap = bool(re.search(r"\be[- ]?passports?\b", text)) and "roadmap" in text
+        if intent == "epassport_scope":
+            return 1.15 if roadmap else (0.9 if domestic else 0.0)
+        return 1.1 if domestic else 0.0
+    if intent == "face_verification":
+        if all(w in text for w in ("lighting", "background", "camera steady")):
+            return 1.15
+        return float(all(w in text for w in ("system is down", "manual", "identity verification", "boarding")))
+    if intent == "digilocker_comparison":
+        if all(w in text for w in ("digilocker", "aadhaar", "digital credential")):
+            return 1.12
+        if "facial verification" in text and "e-gate" in text and "identity" in text:
+            return 1.1
+        return float(all(w in text for w in ("digilocker", "aadhaar", "registration", "selfie")))
+    if intent == "connectivity":
+        if connectivity_claim(text):
+            return 1.15
+        # Choose the journey stages rather than an unrelated login error or Offline Aadhaar alone.
+        if all(w in text for w in ("registration", "otp", "selfie")):
+            return 1.08
+        gates = "facial verification" in text and ("e-gate" in text or "boarding gate" in text)
+        sharing = all(w in text for w in ("boarding pass", "share", "airport"))
+        if gates and sharing:
+            return 1.1
+        if sharing and not re.search(r"\b(child|children|minor|infant)\b", text):
+            return 1.03
+        return float(gates)
+    return 0.0
+
+
 def intent_match(intent: str | None, chunk: dict) -> float:
     """Promotion requires anchors in the approved chunk itself, not just its filename."""
+    if intent in SCOPED_INTENTS:
+        return scoped_match(intent, chunk["text"])
     text = normalize_query(chunk["text"])
     if intent == "organization":
         if "not-for-profit" in text and "section 8" in text:

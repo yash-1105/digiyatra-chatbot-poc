@@ -52,6 +52,9 @@ class AnthropicChatClient:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "output_config": {"effort": "low"},
+            # This client produces short evidence-grounded text without tools.
+            # Adaptive thinking can consume the whole output allowance before visible text.
+            "thinking": {"type": "disabled"},
             "system": blocks,
             "messages": [m for m in messages if m["role"] != "system"],
         }
@@ -91,13 +94,17 @@ class AnthropicChatClient:
                 continue
             # Insufficient prepaid credit is an availability/quota issue, not a
             # browser request error. Do not expose the upstream billing message.
-            if r.status_code == 400:
+            if r.status_code in (400, 402, 403, 404):
                 try:
                     message = str(r.json().get("error", {}).get("message", "")).lower()
                 except (ValueError, AttributeError):
                     message = ""
-                if "credit balance" in message or "billing" in message:
+                if r.status_code == 402 or "credit balance" in message or "billing" in message:
                     raise ProviderError("quota", r.status_code)
+                if "workspace" in message:
+                    raise ProviderError("workspace", r.status_code)
+                if r.status_code in (403, 404) and "model" in message:
+                    raise ProviderError("model_access", r.status_code)
             kind = (
                 "auth"
                 if r.status_code in (401, 403)

@@ -24,6 +24,9 @@ def usage_values(provider: str, usage: dict, settings: Settings, fallback_input:
 
     reasoning, write_1h = None, None
     if provider == "anthropic":
+        details = usage.get("output_tokens_details") or {}
+        if "thinking_tokens" in details:
+            reasoning = integer(details["thinking_tokens"])
         estimated = "input_tokens" not in usage or "output_tokens" not in usage
         fresh = integer(usage.get("input_tokens", fallback_input))
         output = integer(usage.get("output_tokens"))
