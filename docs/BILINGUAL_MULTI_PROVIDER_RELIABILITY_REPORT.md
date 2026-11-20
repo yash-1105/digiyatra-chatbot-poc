@@ -64,3 +64,7 @@ The harness reserves a conservative retry-inclusive list-price ceiling and paces
 ## Knowledge gaps
 
 The approved corpus lacks explicit store-download pricing, a Digi Yatra service-fee statement, and a per-stage offline capability matrix. The approved corpus establishes DigiLocker's enrollment relationship. Independent DigiLocker policies are outside that evidence. The public DigiLocker site describes its broader document-wallet purpose and can be reviewed as a separate source. The undated roadmap establishes a proposal only. Current international or ePassport availability requires an updated approved source. [Official DigiLocker overview](https://www.digilocker.gov.in/web/ecosystem)
+
+## International evidence freshness
+
+On November 1, 2026, the Ministry of Civil Aviation announced a limited international trial covering selected flights and eligible Indian ePassport holders. That release postdates this application's undated approved international snapshot. The application leads with the snapshot limitation, attributes supported scope and roadmap facts to the approved corpus, and does not present the older domestic description as today's complete policy. The ministry announcement is a source for content-owner review. It has not been added to the deployed corpus. [Ministry of Civil Aviation trial announcement](https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2331200&lang=1&reg=1)

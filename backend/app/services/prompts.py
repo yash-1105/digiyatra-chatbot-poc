@@ -82,7 +82,8 @@ def build_user_turn(question: str, evidence: str, *, compact: bool = False) -> s
             " If asked about e-passports, explicitly describe any documented e-passport proposal as a roadmap. "
             " Use separate cited sentences for domestic scope and the roadmap. Do not infer present eligibility, launch, "
             "trial participants or live availability. Cite each documented statement. "
-            " Quote the source's scope as documentary information, without a bare yes/no about today."
+            " Attribute the domestic scope and roadmap to the documents. Do not lead with yes or no, and do not use "
+            " 'currently available only', 'not currently supported', or assert that a documented roadmap remains pending today."
         )
     elif intent == "face_verification":
         specific = (

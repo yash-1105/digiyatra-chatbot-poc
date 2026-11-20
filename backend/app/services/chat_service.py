@@ -22,10 +22,10 @@ from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, check_output, pii_notice
 from app.services.analytics import AnalyticsService
 from app.services.answering import (
-    comparison_has_both_roles,
     general_system_prompt,
     general_topic,
     restricted_request,
+    scoped_answer_complete,
     snapshot_note,
 )
 from app.services.context import limited_history, optimized_context, select_context
@@ -490,8 +490,8 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
-        if intent == "digilocker_comparison" and not retrieval_retry and not comparison_has_both_roles(checked.text):
-            log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=missing_comparison_role retry=False",
+        if not retrieval_retry and not scoped_answer_complete(intent, checked.text, question):
+            log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=missing_documented_scope retry=False",
                      req.provider, req.locale, intent)
             try:
                 retry = await self._handle(req, retrieval_retry=True, previous_evidence={h.chunk_id for h in hits})
@@ -527,7 +527,10 @@ class ChatService:
             "airport_retention", "international_scope", "epassport_scope",
         })
         if qualification:
-            checked.text += "\n\n" + qualification
+            if intent in {"international_scope", "epassport_scope"}:
+                checked.text = qualification + "\n\n" + checked.text
+            else:
+                checked.text += "\n\n" + qualification
         reason = "documented_snapshot" if qualification else "grounded_answer"
         self.d.conversations.append(req.conversation_id, question, _strip_markers(checked.text))
         # A lead qualification can coexist with useful, grounded partial guidance.
