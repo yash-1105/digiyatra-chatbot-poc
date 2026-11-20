@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -37,13 +37,21 @@ class Settings(BaseSettings):
     anthropic_chat_model: Literal["claude-haiku-5-5"] = "claude-haiku-5-5"
     anthropic_max_tokens: int = Field(default=900, ge=128, le=4096)
     anthropic_timeout_s: float = 45.0
-    anthropic_prompt_cache: bool = True
+    anthropic_prompt_cache: bool = Field(
+        default=False, validation_alias=AliasChoices("ANTHROPIC_PROMPT_CACHE_ENABLED", "ANTHROPIC_PROMPT_CACHE",
+                                                    "anthropic_prompt_cache")
+    )
+    anthropic_workspace_id: str | None = None
+    rag_context_optimization_enabled: bool = False
+    faq_cache_enabled: bool = False
+    faq_cache_signing_key: SecretStr | None = None
     anthropic_rate_limit_requests: int = Field(default=10, ge=1, le=60)
     context_token_budget: int = Field(default=1800, ge=256, le=12000)
     context_top_k: int = Field(default=3, ge=1, le=10)
     prompt_token_budget: int = Field(default=6000, ge=512, le=16000)
     history_token_budget: int = Field(default=600, ge=64, le=2000)
-    faq_cache_ttl_s: int = Field(default=300, ge=0, le=3600)
+    rag_expanded_context_token_budget: int = Field(default=3000, ge=256, le=12000)
+    rag_expanded_top_k: int = Field(default=10, ge=5, le=20)
     # Configured estimate, not an exchange-rate feed or a billing setting.
     usd_inr_estimate: float = Field(default=85.0, gt=0)
     sarvam_input_inr_million: float = Field(default=10.0, ge=0)
@@ -52,6 +60,8 @@ class Settings(BaseSettings):
     anthropic_input_usd_million: float = Field(default=0.10, ge=0)
     anthropic_output_usd_million: float = Field(default=0.50, ge=0)
     anthropic_cache_read_usd_million: float = Field(default=0.01, ge=0)
+    api_pricing_version: str = Field(default="2026-11-20-list", max_length=24)
+    anthropic_cache_write_1h_usd_million: float = Field(default=0.20, ge=0)
     anthropic_cache_write_usd_million: float = Field(default=0.125, ge=0)
 
     # --- Knowledge & index ----------------------------------------------
@@ -120,7 +130,7 @@ class Settings(BaseSettings):
 
     # --- Logging --------------------------------------------------------
     log_level: str = "INFO"
-    # Chat text is NOT logged by default (privacy). Enable only for local debugging.
+    # Legacy setting retained to reject insecure production configuration.
     log_chat_content: bool = False
 
     def production_problems(self) -> list[str]:

@@ -161,7 +161,8 @@ class Retriever:
         self.reload()
 
     def reload(self) -> None:
-        self._chunks = self.index.all_chunks(approved_only=True)
+        self._chunks = sorted(self.index.all_chunks(approved_only=True), key=lambda c: (c["order"], c["chunk_id"]))
+        self._positions = {c["chunk_id"]: i for i, c in enumerate(self._chunks)}
         self._by_id = {c["chunk_id"]: c for c in self._chunks}
         self._faq_groups: dict[tuple, list[dict]] = {}
         for c in self._chunks:
@@ -203,11 +204,10 @@ class Retriever:
         # An approved FAQ that directly addresses a recognized intent gets a chance
         # even if colloquial wording missed both initial candidate lists.
         candidate_ids.update(c["chunk_id"] for c in self._chunks if intent_match(intent, c))
-        idx_of = {c["chunk_id"]: i for i, c in enumerate(self._chunks)}
 
         scored: list[RetrievedChunk] = []
         for cid in candidate_ids:
-            i = idx_of.get(cid)
+            i = self._positions.get(cid)
             if i is None:
                 continue  # not approved / not in memory
             c = self._chunks[i]

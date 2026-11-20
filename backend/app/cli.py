@@ -145,6 +145,14 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("stats")
     sub.add_parser("probe-embeddings")
     sub.add_parser("db-upgrade")
+    sub.add_parser("faq-version")
+    faq_source = sub.add_parser("faq-source")
+    faq_source.add_argument("chunk_id")
+    faq_publish = sub.add_parser("faq-publish")
+    faq_publish.add_argument("bundle")
+    faq_revoke = sub.add_parser("faq-revoke")
+    faq_revoke.add_argument("question")
+    faq_revoke.add_argument("--locale", choices=("en", "hi"), required=True)
     ca = sub.add_parser("create-admin")
     ca.add_argument("--email", default="admin@gmail.com")
     ca.add_argument("--reset-password", action="store_true")
@@ -183,6 +191,34 @@ def main(argv: list[str] | None = None) -> None:
         (settings.index_dir.parent).mkdir(parents=True, exist_ok=True)  # backend/data for the SQLite file
         upgrade(settings.database_url)
         print("Database schema is up to date.")
+    elif args.cmd.startswith("faq-"):
+        from pathlib import Path
+
+        from pydantic import TypeAdapter
+
+        from app.db.session import Database
+        from app.services.faq import FAQEntry, ReviewedFAQs, faq_key
+
+        db = Database(settings.database_url)
+        try:
+            faq = ReviewedFAQs(db, settings, build_retriever(settings))
+            if args.cmd == "faq-version":
+                print(faq.version)
+            elif args.cmd == "faq-source":
+                print(faq.source_ref(args.chunk_id).model_dump_json())
+            elif args.cmd == "faq-publish":
+                entries = TypeAdapter(list[FAQEntry]).validate_json(Path(args.bundle).read_bytes())
+                faq.publish(entries)
+                print(f"Processed {len(entries)} reviewed FAQ rows.")
+            elif args.cmd == "faq-revoke":
+                key = faq_key(args.question)
+                if not key:
+                    raise ValueError("Ineligible FAQ question")
+                faq.revoke(key, args.locale)
+        except Exception as exc:  # noqa: BLE001 - validation and DB exceptions can include private data
+            sys.exit(f"FAQ maintenance failed ({type(exc).__name__})")
+        finally:
+            db.engine.dispose()
     elif args.cmd == "create-admin":
         if not sys.stdin.isatty():
             sys.exit("create-admin must be run in an interactive terminal (the password is typed privately).")

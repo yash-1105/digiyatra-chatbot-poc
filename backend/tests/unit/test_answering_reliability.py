@@ -36,11 +36,12 @@ def grounded_mock(payload):
     return sentence + ' [S1]'
 
 
+@pytest.mark.parametrize('optimized', [False, True])
 @pytest.mark.parametrize('provider', ['sarvam', 'anthropic'])
 @pytest.mark.parametrize('case', CASES, ids=lambda c: c['id'])
-def test_shared_answering_rules_for_both_providers(app_factory, provider, case):
+def test_shared_answering_rules_for_both_providers(app_factory, provider, case, optimized):
     fake = FakeSarvam(lambda p: FakeSarvam.ok(grounded_mock(p)))
-    with app_factory(fake, faq_cache_ttl_s=0) as c:
+    with app_factory(fake, rag_context_optimization_enabled=optimized) as c:
         def handler(request):
             payload = json.loads(request.content)
             assert payload['model'] == 'claude-haiku-5-5'

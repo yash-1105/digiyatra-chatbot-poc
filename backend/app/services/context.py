@@ -1,12 +1,8 @@
-"""Lossless context budgeting and a narrow, bounded public-FAQ cache."""
+"""Whole-passage context and history budgeting."""
 
 from __future__ import annotations
 
-import threading
-import time
-from collections import OrderedDict
-
-from app.rag.query import normalize_query
+from app.rag.query import evidence_tokens
 from app.services.usage import estimate_tokens
 
 
@@ -29,7 +25,7 @@ def select_context(hits, budget: int, top_k: int):
 
 def limited_history(turns, budget: int, limit: int):
     selected, used = [], 0
-    for turn in reversed(turns[-limit:]):
+    for turn in reversed(turns[-limit:] if limit else []):
         cost = estimate_tokens(turn.content) + 10
         if used + cost > budget:
             break
@@ -38,45 +34,44 @@ def limited_history(turns, budget: int, limit: int):
     return list(reversed(selected))
 
 
-_CACHE_QUESTIONS = {
-    "can i use digi yatra on android?",
-    "is digi yatra only for ios?",
-    "where can i download digi yatra?",
-    "how do i register for digi yatra?",
-    "where do i upload my boarding pass?",
-    "how do i upload a pdf from my phone?",
-    "what is an otp?",
-    "what is nfc?",
-    "what does qr code mean?",
-    "what is android?",
-}
 
+def optimized_context(hits, query, budget, top_k, conflict_guidance):
+    """Keep the original lead and favor novel query coverage among remaining whole chunks."""
+    from app.services.prompts import format_evidence
 
-def faq_key(question: str) -> str | None:
-    q = normalize_query(question).rstrip("?.! ")
-    return q if q in {normalize_query(s).rstrip("?.! ") for s in _CACHE_QUESTIONS} else None
-
-
-class FAQCache:
-    def __init__(self, ttl: int = 300, limit: int = 256):
-        self.ttl, self.limit = ttl, limit
-        self._items = OrderedDict()
-        self._lock = threading.Lock()
-
-    def get(self, key):
-        with self._lock:
-            item = self._items.get(key)
-            if not item or time.monotonic() - item[0] >= self.ttl:
-                self._items.pop(key, None)
-                return None
-            self._items.move_to_end(key)
-            return item[1].model_copy(deep=True)
-
-    def put(self, key, response):
-        if not self.ttl:
-            return
-        with self._lock:
-            self._items[key] = (time.monotonic(), response.model_copy(deep=True))
-            self._items.move_to_end(key)
-            while len(self._items) > self.limit:
-                self._items.popitem(last=False)
+    selected = []
+    pending = list(hits)
+    uncovered = evidence_tokens(query)
+    coverage = {h.chunk_id: uncovered & evidence_tokens(h.text) for h in hits}
+    # Deduplicate exact text only when its provenance and all caveat metadata agree.
+    seen = set()
+    while pending:
+        if selected:
+            pending.sort(key=lambda h: (len(uncovered & coverage[h.chunk_id]), h.score), reverse=True)
+        lead = pending.pop(0)
+        group = [lead]
+        conflicts = set(lead.conflict_ids)
+        if conflicts:
+            # Close transitively so nested conflict groups cannot be split.
+            for member in group:
+                conflicts.update(member.conflict_ids)
+                for h in pending[:]:
+                    if conflicts.intersection(h.conflict_ids):
+                        group.append(h)
+                        pending.remove(h)
+        unique = []
+        for h in group:
+            identity = (h.source_file, h.section, h.text, h.time_sensitive, h.as_of,
+                        h.verification_status, tuple(h.urls), tuple(h.conflict_ids))
+            if identity not in seen:
+                unique.append(h)
+                seen.add(identity)
+        proposed = [*selected, *unique]
+        if len(proposed) > top_k and selected and not conflicts:
+            continue
+        if estimate_tokens(format_evidence(proposed, conflict_guidance)) > budget:
+            continue
+        selected = proposed
+        for h in unique:
+            uncovered -= coverage[h.chunk_id]
+    return selected

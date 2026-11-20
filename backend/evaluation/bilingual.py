@@ -81,7 +81,7 @@ def main():
         embedding_provider="lexical",
         index_dir=PROJECT_DIR / ".cache/conversation-eval/index",
         database_url="sqlite:///" + str(folder / (args.label + "-synthetic.db")),
-        faq_cache_ttl_s=0,
+        faq_cache_enabled=False,
         anthropic_prompt_cache=not bool(args.baseline_prompt),
         rate_limit_requests=10000,
         anthropic_rate_limit_requests=60,

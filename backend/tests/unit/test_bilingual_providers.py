@@ -12,7 +12,8 @@ from app.db.models import AIUsage
 from app.rag.query import evidence_tokens, query_intent
 from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, strip_fabricated_actions
-from app.services.context import faq_key, select_context
+from app.services.context import select_context
+from app.services.faq import faq_key
 from app.services.usage import usage_values
 from tests.conftest import FakeSarvam
 
@@ -95,7 +96,7 @@ def test_strict_request_allowlist(app_factory, field, value):
 
 
 def test_anthropic_official_payload_and_usage():
-    client = AnthropicChatClient("fake-secret", max_tokens=800)
+    client = AnthropicChatClient("fake-secret", max_tokens=800, prompt_cache=True)
     payload = client._payload([{"role": "system", "content": "Safety " * 400}, {"role": "user", "content": "hello"}])
     assert payload["model"] == "claude-haiku-5-5"
     assert payload["output_config"] == {"effort": "low"} and payload["max_tokens"] == 800
@@ -170,16 +171,11 @@ def test_cost_arithmetic_includes_cache_tokens_once():
     assert usage_values("sarvam", {}, s, 120)["tokens_estimated"]
 
 
-def test_safe_cache_is_provider_language_and_corpus_scoped(app_factory):
+def test_generated_otp_answers_are_never_replayed(app_factory):
     fake = FakeSarvam(lambda _: FakeSarvam.ok("An OTP is a one-time password."))
-    with app_factory(fake) as c:
-        first = ask(c, "What is an OTP?").json()
-        second = c.post("/api/v1/chat", json={"message": "What is an OTP?", "conversation_id": "another-conversation"})
-        assert second.json()["cached"] and first["message_id"] != second.json()["message_id"]
-        assert len(fake.requests) == 1
-        assert c.app.state.ai_usage.report(7)["providers"][0]["cache_hits"] == 1
-        c.app.state.retriever.corpus_revision += "updated"
-        c.post("/api/v1/chat", json={"message": "What is an OTP?", "conversation_id": "third-conversation"})
+    with app_factory(fake, faq_cache_enabled=True) as c:
+        for _ in range(2):
+            assert not ask(c, "What is an OTP?").json()["cached"]
         assert len(fake.requests) == 2
     assert faq_key("Here is my Aadhaar 234567891234, what is OTP?") is None
 

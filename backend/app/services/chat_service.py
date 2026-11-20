@@ -8,6 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
+import anyio
 from fastapi.concurrency import run_in_threadpool
 
 from app.clients.base import ChatClient, ProviderError
@@ -21,8 +22,9 @@ from app.security.grounding import ground_answer
 from app.security.guardrails import assess_input, check_output, pii_notice
 from app.services.analytics import AnalyticsService
 from app.services.answering import general_system_prompt, general_topic, restricted_request, snapshot_note
-from app.services.context import FAQCache, faq_key, limited_history, select_context
+from app.services.context import limited_history, optimized_context, select_context
 from app.services.conversation import ConversationStore, Turn
+from app.services.faq import ReviewedFAQs, faq_key
 from app.services.localization import fallback, notice
 from app.services.prompts import (
     CANARY,
@@ -119,6 +121,7 @@ class ChatDeps:
     analytics: AnalyticsService | None = field(default=None)
     providers: dict[str, ChatClient] | None = field(default=None)
     usage: UsageService | None = field(default=None)
+    faqs: ReviewedFAQs | None = field(default=None)
 
 
 def _is_follow_up(text: str) -> bool:
@@ -151,7 +154,6 @@ def _source(i: int, c: RetrievedChunk) -> Source:
 class ChatService:
     def __init__(self, deps: ChatDeps) -> None:
         self.d = deps
-        self.cache = FAQCache(deps.settings.faq_cache_ttl_s)
 
     def _response(self, req: ChatRequest, answer: str, status: str, sources=None, notices=None, model=None) -> ChatResponse:
         if req.locale == "hi":
@@ -183,7 +185,7 @@ class ChatService:
             {"role": "system", "content": general_system_prompt(topic, CANARY)},
             {"role": "user", "content": req.message},
         ], req)
-        keys = [self.d.settings.sarvam_api_key, self.d.settings.anthropic_api_key]
+        keys = [self.d.settings.sarvam_api_key, self.d.settings.anthropic_api_key, self.d.settings.faq_cache_signing_key]
         checked = check_output(result.content, n_sources=0, secrets=[key.get_secret_value() for key in keys if key],
                                canary=CANARY, allowed_urls=set(), allowed_url_prefixes=())
         # Never allow a definition to turn into an uncited Digi Yatra policy or invented source.
@@ -198,16 +200,18 @@ class ChatService:
         response.answer_mode = "general"
         return response
 
-    async def _usage(self, provider, client, usage, status, elapsed, input_estimate=0):
+    async def _usage(self, req, client, usage, status, elapsed, input_estimate=0, *, error=None, retrieval=0):
         if self.d.usage is None:
             return
         try:
-            await run_in_threadpool(self.d.usage.record, provider, client.model, usage,
-                                    status=status, latency_ms=elapsed, fallback_input=input_estimate)
+            await run_in_threadpool(self.d.usage.record, req.provider, client.model, usage,
+                                    status=status, latency_ms=elapsed, fallback_input=input_estimate,
+                                    locale=req.locale, error_kind=error, retrieval_tokens_estimated=retrieval,
+                                    optimized_context=self.d.settings.rag_context_optimization_enabled)
         except Exception as exc:  # noqa: BLE001 - accounting must not break responses
             log.error("ai_usage record_failed error=%s", type(exc).__name__)
 
-    async def _call_llm(self, messages: list[dict], req: ChatRequest):
+    async def _call_llm(self, messages: list[dict], req: ChatRequest, *, retrieval=0):
         clients = self.d.providers or {"sarvam": self.d.llm}
         client = clients.get(req.provider)
         if client is None:
@@ -215,7 +219,8 @@ class ChatService:
         language = "Hindi (Devanagari)" if req.locale == "hi" else "English"
         messages = [dict(m) for m in messages]
         messages[0]["content"] += f"\nRESPONSE LANGUAGE: {language}. This overrides the question/history language."
-        messages[-1]["content"] += ("\nउत्तर केवल देवनागरी हिन्दी में दें, रोमन हिन्दी या Hinglish में नहीं। सामान्य शब्द हिन्दी में रखें (पंजीकरण, सहमति, सत्यापन); ऐप के बटन के सटीक नाम और लिंक मूल रूप में रखें।" if req.locale == "hi" else "\nAnswer in English, even if the question/history uses Hindi or Hinglish.")
+        if req.locale == "hi" or not self.d.settings.rag_context_optimization_enabled:
+            messages[-1]["content"] += ("\nउत्तर केवल देवनागरी हिन्दी में दें, रोमन हिन्दी या Hinglish में नहीं। सामान्य शब्द हिन्दी में रखें (पंजीकरण, सहमति, सत्यापन); ऐप के बटन के सटीक नाम और लिंक मूल रूप में रखें।" if req.locale == "hi" else "\nAnswer in English, even if the question/history uses Hindi or Hinglish.")
         estimate = sum(estimate_tokens(m["content"]) + 10 for m in messages)
         # Byte-count ceiling is deliberately conservative across both tokenizers.
         ceiling = sum(len(m["content"].encode()) + 64 for m in messages)
@@ -225,14 +230,15 @@ class ChatService:
         try:
             result = await client.chat(messages, session_id=req.conversation_id)
         except ProviderError as exc:
-            await self._usage(req.provider, client, exc.usage, "error", int((time.perf_counter()-started)*1000),
-                              0 if exc.kind in {"auth", "quota", "not_configured", "bad_request"} else estimate)
+            await self._usage(req, client, exc.usage, "error", int((time.perf_counter()-started)*1000),
+                              0 if exc.kind in {"auth", "quota", "not_configured", "bad_request"} else estimate,
+                              error=exc.kind, retrieval=retrieval)
             code, msg = _ERROR_MAP.get(exc.kind, (503, "The selected AI provider is temporarily unavailable."))
             if req.locale == "hi":
                 msg = "चुने गए AI प्रदाता की सेवा अभी उपलब्ध नहीं है। कृपया थोड़ी देर बाद फिर प्रयास करें।"
             log.warning("chat upstream_error provider=%s kind=%s status=%s", req.provider, exc.kind, exc.status)
             raise AssistantUnavailable(exc.kind, code, msg) from None
-        await self._usage(req.provider, client, result.usage, "ok", int((time.perf_counter()-started)*1000), estimate)
+        await self._usage(req, client, result.usage, "ok", int((time.perf_counter()-started)*1000), estimate, retrieval=retrieval)
         return result
 
     async def handle(self, req: ChatRequest) -> ChatResponse:
@@ -243,26 +249,50 @@ class ChatService:
         history = self._history(req)
         prev_user = next((t.content for t in reversed(history) if t.role == "user"), None)
         classify_text = normalize_query(a.redacted_text if not (prev_user and _is_follow_up(a.redacted_text)) else f"{prev_user} {a.redacted_text}")
-        canonical = faq_key(req.message)
-        cache_key = (self.d.retriever.corpus_revision, req.provider, req.locale, canonical)
-        eligible = bool(canonical and not history and not req.history and not a.pii_types and not a.injection)
-        cached = self.cache.get(cache_key) if eligible else None
+        cache_outcome, answer, hits = "disabled", None, []
+        if self.d.settings.faq_cache_enabled:
+            key = faq_key(req.message)
+            if not self.d.faqs:
+                cache_outcome = "unavailable"
+            elif history or req.history:
+                cache_outcome = "context"
+            elif a.pii_types or a.injection or a.live_status or a.action_request or a.greeting:
+                cache_outcome = "safety_or_dynamic"
+            elif not key:
+                cache_outcome = "unlisted"
+            else:
+                cache_outcome = "timeout"
+                try:
+                    with anyio.move_on_after(0.4):
+                        cache_outcome, answer, hits = await anyio.to_thread.run_sync(
+                            self.d.faqs.lookup, key, req.locale, abandon_on_cancel=True
+                        )
+                except Exception as exc:  # noqa: BLE001 - cache is optional and fails to ordinary RAG
+                    cache_outcome = "invalid_or_error"
+                    log.warning("faq lookup failed error=%s", type(exc).__name__)
         try:
-            if cached:
-                resp = cached.model_copy(update={"message_id": uuid.uuid4().hex, "conversation_id": req.conversation_id, "cached": True})
+            if answer is not None:
+                resp = self._response(req, answer, "answered", sources=[_source(i, h) for i, h in enumerate(hits, 1)])
+                resp.cached = True
                 self.d.conversations.append(req.conversation_id, a.redacted_text, _strip_markers(resp.answer))
-                client = (self.d.providers or {"sarvam": self.d.llm})[req.provider]
-                await self._usage(req.provider, client, {}, "cache", 0)
             else:
                 resp = await self._handle(req)
-                if eligible and resp.status == "answered" and not resp.notices and not any(src.time_sensitive for src in resp.sources):
-                    self.cache.put(cache_key, resp)
         except AssistantUnavailable:
+            await self._faq_metric(req, cache_outcome, started)
             await self._record(req, uuid.uuid4().hex, asked_at, classify_text, "error", 0, bool(a.pii_types), started)
             raise
+        await self._faq_metric(req, cache_outcome, started)
         await self._record(req, resp.message_id, asked_at, classify_text, resp.status, len(resp.sources),
                            bool(a.pii_types), started)
         return resp
+
+    async def _faq_metric(self, req, outcome, started):
+        if self.d.usage and self.d.settings.faq_cache_enabled:
+            try:
+                await run_in_threadpool(self.d.usage.record_faq, req.provider, req.locale, outcome,
+                                        int((time.perf_counter() - started) * 1000))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("faq metric failed error=%s", type(exc).__name__)
 
     async def _record(self, req, message_id, asked_at, text, status, n_sources, pii, started) -> None:
         if self.d.analytics is None:
@@ -301,8 +331,6 @@ class ChatService:
                 resp.status, len(resp.sources), top, ",".join(a.pii_types) or "-",
                 (time.perf_counter() - started) * 1000,
             )
-            if s.log_chat_content:
-                log.info("chat content q=%r a=%r", question, resp.answer)
             log.info("chat decision provider=%s locale=%s intent=%s reason=%s retry=%s", req.provider, req.locale, intent or "none", reason, retrieval_retry)
             return resp
 
@@ -346,9 +374,21 @@ class ChatService:
         if summary and _is_follow_up(question) and not query_intent(question):
             retrieval_query = summary + " " + retrieval_query
         search = self.d.retriever.retry_search if retrieval_retry else self.d.retriever.search
-        candidates = search(retrieval_query, s.retrieval_top_k)
-        hits = select_context(candidates, s.context_token_budget, s.context_top_k)
-        log.info("chat retrieval provider=%s locale=%s intent=%s retry=%s candidates=%d selected=%d ids=%s scores=%s budget=%d", req.provider, req.locale, intent or "none", retrieval_retry, len(candidates), len(hits), ",".join(h.chunk_id for h in hits), ",".join(f"{h.score:.3f}" for h in hits), s.context_token_budget)
+        if s.rag_context_optimization_enabled:
+            expand = retrieval_retry or intent in {"airport_catalog", "airport_planned"}
+            requested = max(s.retrieval_top_k, s.rag_expanded_top_k) if expand else s.retrieval_top_k
+            candidates = search(retrieval_query, requested)
+            budget = s.rag_expanded_context_token_budget if expand else s.context_token_budget
+            fixed = sum(estimate_tokens(t.content) + 10 for t in bounded_history)
+            fixed += estimate_tokens(SYSTEM_PROMPT + summary + build_user_turn(question, "", compact=True)) + 240
+            top_k = requested if expand else s.context_top_k
+            hits = optimized_context(candidates, retrieval_query, min(budget, s.prompt_token_budget - fixed),
+                                     top_k, self.d.conflict_guidance)
+        else:
+            candidates = search(retrieval_query, s.retrieval_top_k)
+            hits = select_context(candidates, s.context_token_budget, s.context_top_k)
+        log.info("chat retrieval provider=%s locale=%s retry=%s candidates=%d selected=%d",
+                 req.provider, req.locale, retrieval_retry, len(candidates), len(hits))
         if retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set()):
             reason = "retry_no_new_evidence"
             return done(self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices))
@@ -375,15 +415,15 @@ class ChatService:
             messages.append({"role": "user", "content": "Earlier topic hints only, not evidence: " + summary})
         for t in bounded_history:
             messages.append({"role": t.role, "content": t.content})
-        messages.append({"role": "user", "content": build_user_turn(question, evidence)})
+        messages.append({"role": "user", "content": build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled)})
 
-        result = await self._call_llm(messages, req)
+        result = await self._call_llm(messages, req, retrieval=estimate_tokens(evidence))
         if INSUFFICIENT not in result.content.upper() and not re.search(r"\[\s*S?\s*\d+", result.content):
             # Observed live: the model occasionally answers correctly but omits [S#] markers.
             # Ask once for a cited rewrite instead of showing an unverifiable answer.
             log.info("chat citation_repair_attempt")
             repair = [*messages, {"role": "assistant", "content": result.content}, {"role": "user", "content": CITATION_REPAIR}]
-            result = await self._call_llm(repair, req)
+            result = await self._call_llm(repair, req, retrieval=estimate_tokens(evidence))
 
         raw = result.content.strip()
         if INSUFFICIENT in raw.upper():
@@ -394,7 +434,7 @@ class ChatService:
             if len(raw) < 40:
                 return await insufficient("model_insufficient_evidence", top, result.model)
 
-        secrets_list = [key.get_secret_value() for key in (s.sarvam_api_key, s.anthropic_api_key) if key]
+        secrets_list = [key.get_secret_value() for key in (s.sarvam_api_key, s.anthropic_api_key, s.faq_cache_signing_key) if key]
         allowed_urls = {u for h in hits for u in h.urls}
         checked = check_output(
             raw,

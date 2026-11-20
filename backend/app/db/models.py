@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -123,3 +123,32 @@ class AIUsage(Base):
     tokens_estimated: Mapped[bool] = mapped_column(Boolean, nullable=False)
     estimated_usd: Mapped[float] = mapped_column(Float, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    locale: Mapped[str | None] = mapped_column(String(2))
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer)
+    cache_write_1h_tokens: Mapped[int | None] = mapped_column(Integer)
+    retrieval_tokens_estimated: Mapped[int | None] = mapped_column(Integer)
+    priced_amount: Mapped[float | None] = mapped_column(Float)
+    pricing_version: Mapped[str | None] = mapped_column(String(24))
+    error_kind: Mapped[str | None] = mapped_column(String(24))
+    optimized_context: Mapped[bool | None] = mapped_column(Boolean)
+
+
+class FAQUsage(Base):
+    __tablename__ = "faq_usage"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(12))
+    locale: Mapped[str] = mapped_column(String(2))
+    outcome: Mapped[str] = mapped_column(String(24))
+    latency_ms: Mapped[int] = mapped_column(Integer)
+
+
+class ApprovedFAQ(Base):
+    """Manually published public questions and reviewed answers."""
+    __tablename__ = "approved_faq"
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    locale: Mapped[str] = mapped_column(String(2), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)

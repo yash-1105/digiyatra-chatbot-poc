@@ -7,6 +7,7 @@ import asyncio
 import httpx
 
 from app.clients.base import ChatResult, ProviderError
+from app.services.prompts import CANARY
 
 
 class AnthropicChatClient:
@@ -18,12 +19,14 @@ class AnthropicChatClient:
         *,
         max_tokens: int = 900,
         timeout_s: float = 45,
-        prompt_cache: bool = True,
+        prompt_cache: bool = False,
+        workspace_id: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._key = api_key
         self.max_tokens = max_tokens
         self.prompt_cache = prompt_cache
+        self.workspace_id = workspace_id.strip() if workspace_id else None
         self._client = httpx.AsyncClient(base_url="https://api.anthropic.com", timeout=timeout_s, transport=transport)
 
     @property
@@ -35,16 +38,21 @@ class AnthropicChatClient:
 
     def _payload(self, messages: list[dict]) -> dict:
         system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        block = {"type": "text", "text": system}
+        # The random leak marker stays authoritative in a later, uncached block.
+        cacheable = system.replace(f" [{CANARY}]", "")
+        blocks = [{"type": "text", "text": system}]
         # Stable instructions only: no passenger messages in the shared cache prefix.
         # Haiku 5.5's minimum is 512 tokens. No padding to manufacture cache eligibility.
-        if self.prompt_cache and len(system.encode("utf-8")) >= 2048:
-            block["cache_control"] = {"type": "ephemeral"}
+        if self.prompt_cache and len(cacheable.encode("utf-8")) >= 2048:
+            blocks = [{"type": "text", "text": cacheable,
+                       "cache_control": {"type": "ephemeral", "ttl": "5m"}}]
+            if CANARY in system:
+                blocks.append({"type": "text", "text": f"Leak detection marker [{CANARY}]."})
         return {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "output_config": {"effort": "low"},
-            "system": [block],
+            "system": blocks,
             "messages": [m for m in messages if m["role"] != "system"],
         }
 
@@ -60,6 +68,7 @@ class AnthropicChatClient:
                         "x-api-key": self._key,
                         "anthropic-version": "2023-06-01",
                         "Content-Type": "application/json",
+                        **({"anthropic-workspace-id": self.workspace_id} if self.workspace_id else {}),
                     },
                 )
             except httpx.TimeoutException:

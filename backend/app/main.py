@@ -93,7 +93,7 @@ def create_app(
     app.state.providers = {"sarvam": app.state.llm, "anthropic": AnthropicChatClient(
         settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None,
         max_tokens=settings.anthropic_max_tokens, timeout_s=settings.anthropic_timeout_s,
-        prompt_cache=settings.anthropic_prompt_cache)}
+        prompt_cache=settings.anthropic_prompt_cache, workspace_id=settings.anthropic_workspace_id)}
     app.state.anthropic_rate_limiter = RateLimiter(settings.anthropic_rate_limit_requests, settings.rate_limit_window_s)
     # Database (analytics + admin). The schema is created by Alembic (`python -m app.cli db-upgrade`),
     # never implicitly at startup.
@@ -120,9 +120,17 @@ def create_app(
             app.state.index_meta = retriever.index.meta()
         app.state.retriever = retriever
         app.state.evaluation_conversations = ConversationStore(max_conversations=50, ttl_s=300, max_turns=10)
+        reviewed_faqs = None
+        if settings.faq_cache_enabled and migrated:
+            from app.services.faq import ReviewedFAQs
+
+            try:
+                reviewed_faqs = ReviewedFAQs(app.state.db, settings, retriever)
+            except Exception as exc:  # noqa: BLE001 - a broken cache must not block startup
+                log.warning("faq unavailable error=%s", type(exc).__name__)
         app.state.chat_service = ChatService(
             ChatDeps(settings, retriever, app.state.llm, ConversationStore(), _conflict_guidance(settings),
-                     analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage)
+                     analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage, faqs=reviewed_faqs)
         )
         log.info("Knowledge index loaded: %d approved chunks", retriever.chunk_count)
     except (IndexNotBuilt, RuntimeError) as exc:
