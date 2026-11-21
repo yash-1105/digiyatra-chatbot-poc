@@ -31,6 +31,7 @@ from app.services.answering import (
     scoped_answer_complete,
     snapshot_note,
     verified_introduction,
+    verified_retention,
 )
 from app.services.context import limited_history, optimized_context, select_context
 from app.services.conversation import ConversationStore, Turn
@@ -612,10 +613,18 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
-        if focus == "airport_retention" and re.search(
-            r"(?i)\b(?:for|at least|exactly)\s+24\s*hours?\b", checked.text
-        ):
-            return await insufficient("retention_duration_not_deadline", top, result.model)
+        if focus == "airport_retention" and re.search(r"\b24\b", normalize_query(checked.text)):
+            precise = normalize_query(checked.text)
+            if re.search(r"(?i)\b(?:for|at least|exactly)\s+24\s*hours?\b", precise) or not (
+                re.search(r"within.{0,15}24|24.{0,25}(?:भीतर|अंदर)", precise)
+                and re.search(r"scheduled departure|निर्धारित.{0,35}(?:प्रस्थान|रवानगी)", precise)
+            ):
+                if retention := verified_retention(hits, req.locale):
+                    source, text = retention
+                    self.d.conversations.append(req.conversation_id, question, _strip_markers(text))
+                    return done(self._response(req, text, "answered", sources=[_source(1, source)],
+                                               notices=notices, model=result.model), top)
+                return await insufficient("retention_missing_deadline_or_event", top, result.model)
         verified_wallet = (focus == "digilocker_comparison" and supplemental is not None
                            and supplemental.source_file == "supplement:digilocker-overview")
         scope_target = 3 if focus == "connectivity" else int(focus == "digilocker_comparison" and not verified_wallet)

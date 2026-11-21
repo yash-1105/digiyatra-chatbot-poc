@@ -213,6 +213,20 @@ def verified_introduction(hits: list[RetrievedChunk], locale: str) -> tuple[Retr
     return None
 
 
+def verified_retention(hits: list[RetrievedChunk], locale: str) -> tuple[RetrievedChunk, str] | None:
+    for hit in hits:
+        evidence = hit.text.casefold()
+        if all(term in evidence for term in ("airport systems", "within 24 hours", "scheduled departure time")):
+            return hit, (
+                "हवाई अड्डे के सिस्टम में रखा यात्री डेटा उड़ान के निर्धारित प्रस्थान समय के 24 घंटे के भीतर "
+                "मिटा दिया जाता है [1]। यह समय-सीमा एयरपोर्ट के डेटा के लिए है, आपके फ़ोन के वॉलेट के लिए नहीं।"
+                if locale == "hi" else
+                "The airport systems delete the travel data they hold within 24 hours of the flight’s scheduled departure [1]. "
+                "This deadline applies to airport-held data, separate from what is stored in your phone’s wallet."
+            )
+    return None
+
+
 def qwen_scope_score(focus: str, answer: str) -> int:
     q = normalize_query(answer)
     if focus == "introduction":

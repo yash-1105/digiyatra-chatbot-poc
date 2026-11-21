@@ -150,3 +150,16 @@ def test_introduction_fallback_uses_approved_identity_check(retriever):
         source, text = verified_introduction([approved], locale)
         assert source is approved and "[1]" in text and qwen_scope_score("introduction", text) == 1
     assert verified_introduction([], "en") is None
+
+
+def test_retention_precision_requires_approved_scheduled_departure_evidence(retriever):
+    from dataclasses import replace
+
+    from app.services.answering import verified_retention
+
+    candidates = retriever.search("How long does the airport keep my Digi Yatra data?")
+    approved, answer = verified_retention(candidates, "en")
+    assert approved.source_file == "linkedin_privacy_security.md"
+    assert "within 24 hours of the flight’s scheduled departure [1]" in answer and "phone" in answer
+    altered = replace(approved, text=approved.text.replace("scheduled departure time", "departure"))
+    assert verified_retention([altered], "en") is None
