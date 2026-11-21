@@ -26,6 +26,7 @@ from app.services.answering import (
     general_topic,
     missing_minor_facts,
     qwen_answer_focus,
+    qwen_general_fallback,
     qwen_scope_score,
     restricted_request,
     scoped_answer_complete,
@@ -243,8 +244,14 @@ class ChatService:
         policy = re.search(rf"(?i)\b({forbidden})\b", concepts(checked.text))
         if checked.leaked:
             return self._response(req, MSG_REFUSED, "refused", notices=notices, model=result.model)
-        if not checked.text or policy or checked.invalid_citations or checked.removed_urls or checked.removed_actions:
-            return self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model)
+        fallback_text = qwen_general_fallback(topic, req.locale) if req.provider == "novita" else None
+        incomplete = fallback_text and not (
+            re.search(r"(?i)chip|चिप", checked.text) and re.search(r"(?i)identit|पहचान", checked.text)
+        )
+        if not checked.text or policy or checked.invalid_citations or checked.removed_urls or checked.removed_actions or incomplete:
+            if not fallback_text:
+                return self._response(req, MSG_INSUFFICIENT, "insufficient_evidence", notices=notices, model=result.model)
+            checked.text = fallback_text
         answer = ("सामान्य जानकारी (डिजी यात्रा की नीति नहीं):\n\n" if req.locale == "hi" else "General explanation (not Digi Yatra policy):\n\n") + checked.text
         self.d.conversations.append(req.conversation_id, assess_input(req.message).redacted_text, checked.text)
         response = self._response(req, answer, "answered", notices=notices, model=result.model)
@@ -613,7 +620,7 @@ class ChatService:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
-        if focus == "airport_retention" and re.search(r"\b24\b", normalize_query(checked.text)):
+        if focus == "airport_retention":
             precise = normalize_query(checked.text)
             if re.search(r"(?i)\b(?:for|at least|exactly)\s+24\s*hours?\b", precise) or not (
                 re.search(r"within.{0,15}24|24.{0,25}(?:भीतर|अंदर)", precise)

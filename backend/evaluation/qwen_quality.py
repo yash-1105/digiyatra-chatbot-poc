@@ -46,7 +46,7 @@ def failed_assertions(row: dict) -> list[str]:
         checks.update(three_stages="otp" in q and "boarding pass" in q and bool(re.search(r"facial|face|biometric", q)),
                       scoped_uncertainty="does not specify" in q and "internet" in q, sourced=bool(files))
     elif case == "privacy_retention":
-        checks.update(deadline=bool(re.search(r"within.{0,15}24\s+hours", q)) and "scheduled departure" in q,
+        checks.update(deadline=bool(re.search(r"(?:within|up to|no more than).{0,15}24\s+hours", q)) and "scheduled departure" in q,
                       not_exact_duration=not re.search(r"\b(?:for|at least|exactly)\s+24\s+hours", q),
                       storage_distinguished=bool(re.search(r"mobile device|phone|wallet", q)) and "airport" in q,
                       sourced="airport_data_sharing.md" in files or "linkedin_privacy_security.md" in files)
