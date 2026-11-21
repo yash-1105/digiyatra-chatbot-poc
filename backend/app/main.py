@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.api.routes import admin, chat, health
 from app.clients.anthropic import AnthropicChatClient
+from app.clients.novita import NovitaChatClient
 from app.clients.sarvam import SarvamChatClient
 from app.config import Settings, get_settings
 from app.db.session import Database
@@ -95,6 +96,13 @@ def create_app(
         max_tokens=settings.anthropic_max_tokens, timeout_s=settings.anthropic_timeout_s,
         prompt_cache=settings.anthropic_prompt_cache, workspace_id=settings.anthropic_workspace_id)}
     app.state.anthropic_rate_limiter = RateLimiter(settings.anthropic_rate_limit_requests, settings.rate_limit_window_s)
+    app.state.providers["novita"] = NovitaChatClient(
+        settings.novita_api_key.get_secret_value() if settings.novita_api_key else None,
+        max_tokens=settings.novita_max_tokens, timeout_s=settings.novita_timeout_s,
+        max_retries=settings.novita_max_retries, max_concurrency=settings.novita_max_concurrency,
+        enable_thinking=settings.novita_enable_thinking,
+    )
+    app.state.novita_rate_limiter = RateLimiter(settings.novita_rate_limit_requests, settings.rate_limit_window_s)
     # Database (analytics + admin). The schema is created by Alembic (`python -m app.cli db-upgrade`),
     # never implicitly at startup.
     app.state.db = Database(settings.database_url)

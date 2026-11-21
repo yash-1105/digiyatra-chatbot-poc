@@ -70,7 +70,7 @@ export function useChat() {
     setConversationId(stored?.conversationId ?? newId());
     setMessages(stored?.messages ?? []);
     setLocale(stored?.locale === "hi" ? "hi" : "en");
-    setProvider(stored?.provider === "anthropic" ? "anthropic" : "sarvam");
+    setProvider(stored?.provider === "anthropic" || stored?.provider === "novita" ? stored.provider : "sarvam");
     hydrated.current = true;
     return () => abortRef.current?.abort();
   }, []);

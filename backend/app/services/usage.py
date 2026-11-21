@@ -8,6 +8,7 @@ from math import ceil
 
 from sqlalchemy import select
 
+from app.clients.novita import NovitaChatClient
 from app.config import Settings
 from app.db.models import AIUsage, FAQUsage
 from app.db.session import Database, utcnow
@@ -53,10 +54,22 @@ def usage_values(provider: str, usage: dict, settings: Settings, fallback_input:
         details = usage.get("completion_tokens_details") or {}
         if "reasoning_tokens" in details:
             reasoning = integer(details["reasoning_tokens"])
-        native = ((total - read) * settings.sarvam_input_inr_million
-                  + read * settings.sarvam_cached_inr_million
-                  + output * settings.sarvam_output_inr_million) / 1e6
-        cost = native / settings.usd_inr_estimate
+        if provider == "novita":
+            prompt_details = usage.get("prompt_tokens_details") or {}
+            if not read:
+                read = min(total, integer(prompt_details.get("cache_read_Prompt_tokens")))
+            write = min(total - read, integer(prompt_details.get("cache_creation_Prompt_tokens")))
+            native = cost = (
+                (total - read - write) * settings.novita_input_usd_million
+                + read * settings.novita_cached_usd_million
+                + write * settings.novita_cache_write_usd_million
+                + output * settings.novita_output_usd_million
+            ) / 1e6
+        else:
+            native = ((total - read) * settings.sarvam_input_inr_million
+                      + read * settings.sarvam_cached_inr_million
+                      + output * settings.sarvam_output_inr_million) / 1e6
+            cost = native / settings.usd_inr_estimate
     return dict(
         input_tokens=total,
         output_tokens=output,
@@ -65,7 +78,7 @@ def usage_values(provider: str, usage: dict, settings: Settings, fallback_input:
         tokens_estimated=estimated,
         estimated_usd=cost,
         priced_amount=None if estimated else native,
-        pricing_version=settings.api_pricing_version,
+        pricing_version=settings.novita_pricing_version if provider == "novita" else settings.api_pricing_version,
         reasoning_tokens=reasoning,
         cache_write_1h_tokens=write_1h,
     )
@@ -98,7 +111,8 @@ class UsageService:
             rows = list(s.scalars(select(AIUsage).where(AIUsage.occurred_at >= start)))
             faqs = list(s.scalars(select(FAQUsage).where(FAQUsage.occurred_at >= start)))
         providers = []
-        for provider, model in [("sarvam", "sarvam-105b"), ("anthropic", "claude-haiku-5-5")]:
+        for provider, model in [("sarvam", "sarvam-105b"), ("anthropic", "claude-haiku-5-5"),
+                                ("novita", NovitaChatClient.model)]:
             group = [r for r in rows if r.provider == provider]
             upstream = [r for r in group if r.status != "cache"]
             tokens = sum(r.input_tokens + r.output_tokens for r in upstream)

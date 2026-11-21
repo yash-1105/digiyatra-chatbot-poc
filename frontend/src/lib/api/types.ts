@@ -7,7 +7,7 @@
  *
  * JSON bodies use snake_case on the wire; see http-client.ts for mapping.
  */
-export type AIProvider = "sarvam" | "anthropic";
+export type AIProvider = "sarvam" | "anthropic" | "novita";
 
 export type ChatRole = "user" | "assistant";
 

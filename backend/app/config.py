@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     faq_cache_enabled: bool = False
     faq_cache_signing_key: SecretStr | None = None
     anthropic_rate_limit_requests: int = Field(default=10, ge=1, le=60)
+    novita_api_key: SecretStr | None = Field(default=None, alias="NOVITA_API_KEY")
+    novita_max_tokens: int = Field(default=1200, ge=128, le=4096)
+    novita_timeout_s: float = Field(default=25.0, gt=0, le=35)
+    novita_max_retries: int = Field(default=1, ge=0, le=2)
+    novita_max_concurrency: int = Field(default=8, ge=1, le=32)
+    novita_rate_limit_requests: int = Field(default=10, ge=1, le=60)
+    novita_enable_thinking: bool = False
+    novita_input_usd_million: float = Field(default=0.15, ge=0)
+    novita_cache_write_usd_million: float = Field(default=0.20, ge=0)
+    novita_cached_usd_million: float = Field(default=0.016, ge=0)
+    novita_output_usd_million: float = Field(default=0.47, ge=0)
+    novita_pricing_version: str = Field(default="2026-11-21-list", max_length=24)
     general_knowledge_enabled: bool = True
     conversational_answers_enabled: bool = False
     knowledge_enrichment_enabled: bool = False

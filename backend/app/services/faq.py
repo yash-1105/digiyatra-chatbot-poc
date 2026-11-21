@@ -87,7 +87,7 @@ class ReviewedFAQs:
             corpus["corpus_sha256"], corpus["approval"]["manifest_sha256"], self.documents,
             retriever.corpus_revision, ANSWER_RULES_REVISION, SYSTEM_PROMPT.replace(CANARY, ""),
         ])).hexdigest()
-        self.secrets = [k.get_secret_value() for k in (settings.sarvam_api_key, settings.anthropic_api_key, key) if k]
+        self.secrets = [k.get_secret_value() for k in (settings.sarvam_api_key, settings.anthropic_api_key, settings.novita_api_key, key) if k]
 
     def source_ref(self, chunk_id):
         row = self.r.lookup(chunk_id)

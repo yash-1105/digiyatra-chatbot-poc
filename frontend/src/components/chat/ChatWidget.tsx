@@ -145,17 +145,17 @@ function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-3 border-b border-line bg-surface px-4 py-2 text-xs text-ink">
+          <div className={cn("flex items-center gap-3 border-b border-line bg-surface px-4 py-2 text-xs text-ink", provider === "novita" && "max-[350px]:gap-2 max-[350px]:px-3")}>
             <label className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span>{locale === "hi" ? "भाषा" : "Language"}</span>
+              <span className={provider === "novita" ? "max-[350px]:hidden" : undefined}>{locale === "hi" ? "भाषा" : "Language"}</span>
               <select aria-label="Response language" value={locale} disabled={loading} onChange={(e) => setLocale(e.target.value as Locale)} className="min-w-0 flex-1 rounded border border-line bg-page px-1 py-1 text-ink">
                 <option value="en">English</option><option value="hi">हिन्दी</option>
               </select>
             </label>
-            <label className="flex min-w-0 flex-1 items-center gap-1.5">
+            <label className={cn("flex min-w-0 items-center gap-1.5", provider === "novita" ? "flex-[1.7] max-[350px]:flex-[2.8]" : "flex-1")}>
               <span>AI</span>
-              <select aria-label="AI provider" title={provider === "sarvam" ? "Sarvam AI — sarvam-105b" : "Anthropic — claude-haiku-5-5"} value={provider} disabled={loading} onChange={(e) => setProvider(e.target.value as AIProvider)} className="min-w-0 flex-1 rounded border border-line bg-page px-1 py-1 text-ink">
-                <option value="sarvam">Sarvam AI — 105B</option><option value="anthropic">Anthropic — Haiku 5.5</option>
+              <select aria-label="AI provider" title={{ sarvam: "Sarvam AI — sarvam-105b", anthropic: "Anthropic — claude-haiku-5-5", novita: "Novita AI — Qwen3.8 Flash" }[provider]} value={provider} disabled={loading} onChange={(e) => setProvider(e.target.value as AIProvider)} className="min-w-0 flex-1 rounded border border-line bg-page px-1 py-1 text-ink">
+                <option value="sarvam">Sarvam AI — 105B</option><option value="anthropic">Anthropic — Haiku 5.5</option><option value="novita">Novita AI — Qwen3.8 Flash</option>
               </select>
             </label>
           </div>

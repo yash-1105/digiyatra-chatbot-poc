@@ -8,7 +8,7 @@ import re
 from app.config import Settings, get_settings
 
 _PATTERNS = [
-    (re.compile(r"(?i)(api[-_ ]?subscription[-_ ]?key|authorization|bearer|sarvam_api_key)(\W+)\S+"), r"\1\2[REDACTED]"),
+    (re.compile(r"(?i)(api[-_ ]?subscription[-_ ]?key|authorization|bearer|sarvam_api_key|novita_api_key)(\W+)\S+"), r"\1\2[REDACTED]"),
     (re.compile(r"(?<!\d)\d{4}\s?\d{4}\s?\d{4}(?!\d)"), "[REDACTED-ID]"),
     (re.compile(r"(?<![\w.])(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?![\w.])"), "[REDACTED-PHONE]"),
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[REDACTED-EMAIL]"),
@@ -51,7 +51,7 @@ _filter = RedactingFilter()
 def configure_logging(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     _filter.set_secrets([value.get_secret_value() for value in
-                        (settings.sarvam_api_key, settings.anthropic_api_key, settings.proxy_shared_secret) if value]
+                        (settings.sarvam_api_key, settings.anthropic_api_key, settings.novita_api_key, settings.proxy_shared_secret) if value]
                        + [settings.database_url])
     root = logging.getLogger()
     if not any(isinstance(h, logging.StreamHandler) and getattr(h, "_dy", False) for h in root.handlers):

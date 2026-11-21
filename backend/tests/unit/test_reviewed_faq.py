@@ -167,3 +167,18 @@ def test_native_price_and_ttl_breakdown(reviewed_app):
     assert values["input_tokens"] == 800
     assert values["cache_write_1h_tokens"] == 200
     assert values["priced_amount"] == pytest.approx((100*.1 + 30*.5 + 200*.01 + 300*.125 + 200*.2)/1e6)
+
+
+def test_novita_exact_cache_preserves_identity_and_revocation(reviewed_app):
+    client, fake, faqs, entry = reviewed_app
+    faqs.publish([entry])
+    response = ask(client, provider="novita")
+    assert response["cached"] and response["provider"] == "novita"
+    assert response["model"] is None and response["answer"] == ANSWER
+    assert response["sources"][0]["source_file"] == "test-platform.md" and not fake.requests
+    assert ask(client, conversation_id="novita-wrong-language", locale="hi", provider="novita")["error"]["code"] == "assistant_unavailable"
+    assert ask(client, provider="novita")["error"]["code"] == "assistant_unavailable"  # Conversation now has a prior turn.
+    faqs.revoke(faq_key(QUESTION), "en")
+    assert ask(client, conversation_id="novita-revoked", provider="novita")["error"]["code"] == "assistant_unavailable"
+    report = client.app.state.ai_usage.report(1)
+    assert next(r for r in report["faq"] if r["provider"] == "novita" and r["locale"] == "en")["calls_avoided"] == 1

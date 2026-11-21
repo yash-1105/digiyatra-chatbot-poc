@@ -28,6 +28,11 @@ async def chat(body: ChatRequest, request: Request, response: Response) -> ChatR
         allowed, wait = st.anthropic_rate_limiter.check(key)
         if not allowed:
             raise HTTPException(429, detail={"code": "rate_limited", "message": "Please wait before using this provider again."}, headers={"Retry-After": str(wait)})
+    if body.provider == "novita":
+        key = client_key(request, st.settings.trusted_proxies, st.settings.trusted_proxy_hops)
+        allowed, wait = st.novita_rate_limiter.check(key)
+        if not allowed:
+            raise HTTPException(429, detail={"code": "rate_limited", "message": "Please wait before using this provider again."}, headers={"Retry-After": str(wait)})
     service = st.chat_service
     public_id = body.conversation_id
     if await synthetic_request(request, body.conversation_id):

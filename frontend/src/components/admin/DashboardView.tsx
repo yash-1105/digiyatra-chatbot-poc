@@ -344,7 +344,7 @@ function AIUsagePanel({ usage }: { usage: NonNullable<AnalyticsReport["ai_usage"
   const money = (value: number) => `$${value.toFixed(6)}`;
   return <Panel title="AI Usage & Costs" icon={BarChart3}>
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {usage.providers.map((p) => <div key={p.provider}><p className="text-sm text-ink-muted">{p.provider === "sarvam" ? "Sarvam requests" : "Anthropic requests"}</p><p className="text-2xl font-semibold text-heading">{nf.format(p.requests)}</p><p className="text-xs text-ink-soft">{p.model} · {p.cache_hits} FAQ cache hits · {p.errors} errors</p></div>)}
+      {usage.providers.map((p) => <div key={p.provider}><p className="text-sm text-ink-muted">{p.provider === "novita" ? "Novita requests" : p.provider === "sarvam" ? "Sarvam requests" : "Anthropic requests"}</p><p className="text-2xl font-semibold text-heading">{nf.format(p.requests)}</p><p className="text-xs text-ink-soft">{p.model} · {p.cache_hits} FAQ cache hits · {p.errors} errors</p></div>)}
       <div><p className="text-sm text-ink-muted">Total estimated AI cost</p><p className="text-2xl font-semibold text-heading">{money(usage.total_estimated_usd)}</p></div>
       <div><p className="text-sm text-ink-muted">Average cost per AI response</p><p className="text-2xl font-semibold text-heading">{money(usage.average_usd)}</p></div>
     </div>

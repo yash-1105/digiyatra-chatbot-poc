@@ -21,7 +21,7 @@ class ChatRequest(BaseModel):
     conversation_id: str = ConversationId
     history: list[HistoryItem] = Field(default_factory=list, max_length=20)
     locale: Literal["en", "hi"] = "en"
-    provider: Literal["sarvam", "anthropic"] = "sarvam"
+    provider: Literal["sarvam", "anthropic", "novita"] = "sarvam"
 
     @field_validator("message")
     @classmethod
@@ -55,7 +55,7 @@ class ChatResponse(BaseModel):
     sources: list[Source]
     notices: list[str] = Field(default_factory=list)
     model: str | None = None
-    provider: Literal["sarvam", "anthropic"] = "sarvam"
+    provider: Literal["sarvam", "anthropic", "novita"] = "sarvam"
     locale: Literal["en", "hi"] = "en"
     cached: bool = False
     answer_mode: Literal["knowledge", "general", "insufficient"] = "knowledge"

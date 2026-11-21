@@ -196,7 +196,7 @@ class ChatService:
             {"role": "system", "content": general_system_prompt(topic, CANARY)},
             {"role": "user", "content": f"Define {topic} in plain language."},
         ], req)
-        keys = [self.d.settings.sarvam_api_key, self.d.settings.anthropic_api_key, self.d.settings.faq_cache_signing_key]
+        keys = [self.d.settings.sarvam_api_key, self.d.settings.anthropic_api_key, self.d.settings.novita_api_key, self.d.settings.faq_cache_signing_key]
         checked = check_output(result.content, n_sources=0, secrets=[key.get_secret_value() for key in keys if key],
                                canary=CANARY, allowed_urls=set(), allowed_url_prefixes=())
         # Never allow a definition to turn into an uncited Digi Yatra policy or invented source.
@@ -506,7 +506,7 @@ class ChatService:
             if len(raw) < 40:
                 return await insufficient("model_insufficient_evidence", top, result.model)
 
-        secrets_list = [key.get_secret_value() for key in (s.sarvam_api_key, s.anthropic_api_key, s.faq_cache_signing_key) if key]
+        secrets_list = [key.get_secret_value() for key in (s.sarvam_api_key, s.anthropic_api_key, s.novita_api_key, s.faq_cache_signing_key) if key]
         allowed_urls = {u for h in hits for u in h.urls}
         checked = check_output(
             raw,
