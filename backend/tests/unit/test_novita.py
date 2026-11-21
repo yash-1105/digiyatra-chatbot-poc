@@ -214,8 +214,11 @@ def test_novita_usage_and_cost_no_double_count(app_factory, install_novita):
         assert estimated["tokens_estimated"] and estimated["priced_amount"] is None
 
 
-def test_bilingual_and_hinglish_corpus_uses_identical_shared_rules(app_factory, install_novita, chunks):
+def test_bilingual_and_hinglish_corpus_preserves_shared_rules_outside_scoped_improvements(app_factory, install_novita, chunks):
     from pathlib import Path
+
+    from app.rag.query import query_intent
+    from app.services.answering import qwen_answer_focus
 
     catalog = json.loads((Path(__file__).resolve().parents[2] / "evaluation" / "novita_questions.json").read_text())
     assert len(catalog) == len({row[0] for row in catalog}) == 30
@@ -249,11 +252,20 @@ def test_bilingual_and_hinglish_corpus_uses_identical_shared_rules(app_factory, 
                 base = ask(client, question, provider="sarvam", thread=f"base-{case}-{variant}", **metadata)
                 result = ask(client, question, thread=f"novita-{case}-{variant}", **metadata)
                 assert base.status_code == result.status_code == 200, (case, locale, result.text)
-                assert result.json()["status"] == base.json()["status"], (case, locale)
-                assert result.json()["answer_mode"] == base.json()["answer_mode"], (case, locale)
+                focus = qwen_answer_focus(question, query_intent(question))[0]
+                if focus == "introduction":
+                    assert result.json()["status"] == "answered" and result.json()["sources"]
+                else:
+                    assert result.json()["status"] == base.json()["status"], (case, locale)
+                    assert result.json()["answer_mode"] == base.json()["answer_mode"], (case, locale)
                 assert result.json()["provider"] == "novita" and result.json()["locale"] == locale
                 compare = [payload["messages"] for payload in baseline.requests[previous:]]
-                assert requests[current:] == compare, (case, locale)
+                if focus:
+                    assert requests[current:]
+                    if compare:
+                        assert requests[current:][0][0] != compare[0][0]
+                else:
+                    assert requests[current:] == compare, (case, locale)
                 if case == "cost_service" or (case in {"gate_live", "injection"} and locale == "en"):
                     assert not compare, (case, locale)
                 if case == "digilocker":

@@ -28,6 +28,7 @@ from app.services.faq import stable_json
 INDIA = ZoneInfo("Asia/Kolkata")
 MAX_SOURCE_BYTES = 512_000
 TRIAL_TOPIC = "international_trial"
+AIRPORT_TOPIC = "domestic_airport_coverage"
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class SourcePolicy:
     conflict: str | None = None
     travel_checks: tuple[str, str] | None = None
     eligibility: tuple[str, str] | None = None
+    airport_count: int | None = None
 
 
 SOURCES = {
@@ -73,6 +75,16 @@ SOURCES = {
          "पासपोर्ट साथ रखना और एयरलाइन की सामान्य दस्तावेज़ जाँच व इमिग्रेशन प्रक्रिया पूरी करना ज़रूरी है।"),
         ("Participation is limited to eligible Indian nationals with e-passports.",
          "इसमें केवल पात्र भारतीय ई-पासपोर्ट धारक भाग ले सकते हैं।"),
+    ),
+    "pib-2331200-domestic": SourcePolicy(
+        AIRPORT_TOPIC, "https://www.pib.gov.in/PressReleseDetailm.aspx?PRID=2331200&lang=1&reg=1",
+        "Ministry of Civil Aviation domestic Digi Yatra coverage (PIB)", "2026-11-01", "2026-11-01", None, "high",
+        (("journeys across 39 domestic airports", "serving domestic airlines"),),
+        "On 1 November 2026 the Ministry reported Digi Yatra journeys across 39 domestic airports. "
+        "The announcement gives a count without an airport-by-airport directory. "
+        "The older 24-airport directory is historical and cannot establish current coverage or live gate status.",
+        "Supersedes the older 24-airport snapshot as the latest verified count. The names remain historical.",
+        airport_count=39,
     ),
     "digilocker-overview": SourcePolicy(
         "digilocker_definition", "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2198743&lang=2&reg=3",
@@ -157,7 +169,24 @@ def verified_payload(source_id: str, html: str) -> dict:
         "url": source.url, "title": source.title, "published": source.published, "starts": source.starts,
         "ends": source.ends, "claim": source.claim, "evidence": evidence, "conflict": source.conflict, "travel_checks": list(source.travel_checks) if source.travel_checks else None,
         "eligibility": list(source.eligibility) if source.eligibility else None,
+        **({"airport_count": source.airport_count} if source.airport_count else {}),
     }
+
+
+def domestic_airport_catalog(question: str, intent: str | None) -> bool:
+    q = normalize_query(question)
+    return intent == "airport_catalog" or (
+        not intent and bool(re.search(r"\bairports?\b", q))
+        and bool(re.search(r"\b(?:how many|count|all|39|24)\b|सूची|कितने|kitne", q))
+        and bool(re.search(r"\bdigi yatra\b", q))
+    )
+
+
+def historical_airport_catalog(question: str) -> bool:
+    q = normalize_query(question)
+    if re.search(r"\b(?:compare|vs|versus|now|today|current|39)\b|अब|आज|बनाम", q):
+        return False
+    return bool(re.search(r"\b(?:old(?:er)?|historical|previous|2024|2025)\b|पुरानी?|ऐतिहासिक|पहले", q))
 
 
 def supplemental_topic(question: str, intent: str | None) -> str | None:
@@ -168,6 +197,8 @@ def supplemental_topic(question: str, intent: str | None) -> str | None:
         ("international" in q or "e-passport" in q) and re.search(r"\b(?:trial|pilot|rollout|2027)\b", q)
     ) or ("digi yatra" in q and re.search(r"\bhow\b.{0,45}\bnfc\b", q)):
         return TRIAL_TOPIC
+    if domestic_airport_catalog(question, intent):
+        return AIRPORT_TOPIC
     if intent == "digilocker_comparison":
         return "digilocker_definition"
     return None
@@ -179,10 +210,10 @@ def as_chunk(row: KnowledgeRevision) -> RetrievedChunk:
         chunk_id=f"supplement-{row.id}-{row.digest[:12]}", source_file=f"supplement:{row.source_id}",
         doc_title=data["title"], section="Verified supplemental source", text=data["claim"],
         question=None, score=1.0, vector_score=0.0, keyword_score=1.0, coverage=1.0,
-        time_sensitive=bool(data["ends"]), as_of=data["published"], verification_status="verified",
+        time_sensitive=bool(data["ends"] or data.get("airport_count")), as_of=data["published"], verification_status="verified",
         conflict_ids=[], urls=[data["url"]], category=row.topic,
         extra={"supplemental": True, "ends": data["ends"], "travel_checks": data.get("travel_checks"),
-               "eligibility": data.get("eligibility")},
+               "eligibility": data.get("eligibility"), "airport_count": data.get("airport_count")},
     )
 
 
@@ -247,6 +278,8 @@ class Knowledge:
         source = SOURCES.get(row.source_id)
         return bool(source and source.topic == row.topic and source.risk == row.risk
             and data.get("url") == source.url and data.get("claim") == source.claim
+            and (source.airport_count is None or (data.get("airport_count"), data.get("published"), data.get("starts"))
+                 == (source.airport_count, source.published, source.starts))
             and row.digest == hashlib.sha256(stable_json(data)).hexdigest())
 
     def lookup(self, topic: str, today: date | None = None) -> tuple[RetrievedChunk | None, str | None]:

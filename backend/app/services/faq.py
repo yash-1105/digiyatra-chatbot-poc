@@ -30,7 +30,7 @@ PUBLIC_QUESTIONS = {
     "क्या मैं एंड्रॉयड पर डिजी यात्रा इस्तेमाल कर सकता हूँ",
     "digi yatra app kahan download karun",
 }
-ANSWER_RULES_REVISION = "1"
+ANSWER_RULES_REVISION = "2"
 
 
 def faq_key(question):

@@ -181,6 +181,37 @@ class Retriever:
         """Citation lookup: only approved, indexed chunks resolve."""
         return self._by_id.get(chunk_id)
 
+    @staticmethod
+    def _hit(c: dict, score: float, vs=0.0, kw=0.0, coverage=0.0) -> RetrievedChunk:
+        return RetrievedChunk(
+            chunk_id=c["chunk_id"],
+            source_file=c["source_file"],
+            doc_title=c["doc_title"],
+            section=c["section"],
+            text=c["text"],
+            question=c.get("question"),
+            score=round(score, 4),
+            vector_score=round(vs, 4),
+            keyword_score=round(kw, 4),
+            coverage=round(coverage, 4),
+            time_sensitive=bool(c.get("time_sensitive")),
+            as_of=c.get("as_of"),
+            verification_status=c.get("verification_status") or "not_applicable",
+            conflict_ids=list(c.get("conflict_ids") or []),
+            urls=list(c.get("urls") or []),
+            category=c.get("category") or "",
+        )
+
+    def approved_passage(self, source_file: str, *, question: str | None = None,
+                         section: str | None = None) -> RetrievedChunk | None:
+        """Look up one focused passage in the same in-memory approved index used by search."""
+        for row in self._chunks:
+            if row["source_file"] == source_file and (
+                (question and row.get("question") == question) or (section and row["section"].endswith(section))
+            ):
+                return self._hit(row, 1.0)
+        return None
+
     def search(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
         if not query.strip() or not self._chunks:
             return []
@@ -219,24 +250,7 @@ class Retriever:
             relevance = intent_match(intent, c)
             score = min(1.0, score + 0.55 * relevance)
             scored.append(
-                RetrievedChunk(
-                    chunk_id=cid,
-                    source_file=c["source_file"],
-                    doc_title=c["doc_title"],
-                    section=c["section"],
-                    text=c["text"],
-                    question=c.get("question"),
-                    score=round(score, 4),
-                    vector_score=round(vs, 4),
-                    keyword_score=round(kw, 4),
-                    coverage=round(coverage, 4),
-                    time_sensitive=bool(c.get("time_sensitive")),
-                    as_of=c.get("as_of"),
-                    verification_status=c.get("verification_status") or "not_applicable",
-                    conflict_ids=list(c.get("conflict_ids") or []),
-                    urls=list(c.get("urls") or []),
-                    category=c.get("category") or "",
-                )
+                self._hit(c, score, vs, kw, coverage)
             )
         scored.sort(key=lambda r: ((intent_match(intent, {"text": r.text}) if intent in SCOPED_INTENTS else r.score),
                                    (r.score if intent in SCOPED_INTENTS else intent_match(intent, {"text": r.text})),

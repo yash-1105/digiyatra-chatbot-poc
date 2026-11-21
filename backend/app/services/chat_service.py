@@ -24,14 +24,18 @@ from app.services.analytics import AnalyticsService
 from app.services.answering import (
     general_system_prompt,
     general_topic,
+    missing_minor_facts,
+    qwen_answer_focus,
+    qwen_scope_score,
     restricted_request,
     scoped_answer_complete,
     snapshot_note,
+    verified_introduction,
 )
 from app.services.context import limited_history, optimized_context, select_context
 from app.services.conversation import ConversationStore, Turn
 from app.services.faq import ReviewedFAQs, faq_key
-from app.services.knowledge import TRIAL_TOPIC, Knowledge, supplemental_topic
+from app.services.knowledge import AIRPORT_TOPIC, TRIAL_TOPIC, Knowledge, historical_airport_catalog, supplemental_topic
 from app.services.localization import evidence_gap, fallback, notice
 from app.services.prompts import (
     CANARY,
@@ -182,6 +186,38 @@ class ChatService:
             provider=req.provider, locale=req.locale,
             answer_mode="knowledge" if status == "answered" else "insufficient",
         )
+
+    def _airport_coverage(self, req: ChatRequest, coverage: RetrievedChunk | None, notices: list[str]) -> ChatResponse:
+        # The archived list comes from the existing approval-filtered, reassembled catalogue.
+        historical = historical_airport_catalog(req.message)
+        sources = []
+        answer = ""
+        if historical:
+            hits = self.d.retriever.search("Which airports support Digi Yatra?", 3)
+            archive = next((hit for hit in hits if hit.source_file == "available_airports.md"), None)
+            if archive:
+                entries = re.findall(r"(?m)^\d+\.\s*(\([A-Z]{3}\)[^\n]+)", archive.text)
+                if entries:
+                    lead = ("यह पुरानी सूची है। इससे आज की उपलब्धता की पुष्टि नहीं होती।" if req.locale == "hi"
+                            else "This is the older documented list. Check with your airline or airport for current availability.")
+                    answer = lead + " [1]\n\n" + "\n".join(f"{i}. {name.strip()}" for i, name in enumerate(entries, 1))
+                    sources.append(_source(1, archive))
+        elif coverage and coverage.as_of and coverage.extra.get("airport_count"):
+            count = coverage.extra["airport_count"]
+            date = coverage.as_of
+            answer = (f"नागर विमानन मंत्रालय ने {date} को बताया कि डिजी यात्रा का इस्तेमाल {count} घरेलू हवाई अड्डों पर हुआ था [1]। "
+                      "घोषणा में सभी हवाई अड्डों के नाम नहीं दिए गए हैं। पुरानी 24 हवाई अड्डों की सूची आज की पूरी सूची नहीं है। "
+                      "अपनी उड़ान के लिए एयरलाइन या हवाई अड्डे से पुष्टि करें।" if req.locale == "hi" else
+                      f"On {date}, the Ministry of Civil Aviation reported Digi Yatra journeys across {count} domestic airports [1]. "
+                      "The announcement does not name all the airports. The older 24-airport list is historical. "
+                      "Check with your airline or airport for your departure.")
+            sources.append(_source(1, coverage))
+        if not answer:
+            response = self._response(req, "I can't verify the current supported-airport list. Check with your airline or airport.",
+                                      "insufficient_evidence", notices=notices)
+            return response
+        self.d.conversations.append(req.conversation_id, assess_input(req.message).redacted_text, _strip_markers(answer))
+        return self._response(req, answer, "answered", sources=sources, notices=notices)
 
     def _history(self, req: ChatRequest) -> list[Turn]:
         server = self.d.conversations.history(req.conversation_id)
@@ -340,6 +376,7 @@ class ChatService:
         notices: list[str] = [pii_notice(a.pii_types)] if a.pii_types else []
         question = a.redacted_text
         intent = query_intent(question)
+        focus, guidance = qwen_answer_focus(question, intent) if req.provider == "novita" else ("", "")
         reason = "answered"
         hits: list[RetrievedChunk] = []
 
@@ -347,6 +384,11 @@ class ChatService:
             nonlocal reason
             reason = why
             log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=%s retry=%s", req.provider, req.locale, intent or "none", why, retrieval_retry)
+            if focus == "introduction" and (intro := verified_introduction(hits, req.locale)):
+                source, text = intro
+                self.d.conversations.append(req.conversation_id, question, _strip_markers(text))
+                return done(self._response(req, text, "answered", sources=[_source(1, source)],
+                                           notices=notices, model=model), top)
             if not retrieval_retry:
                 return await self._handle(req, retrieval_retry=True, previous_evidence={h.chunk_id for h in hits})
             return done(no_evidence(model), top)
@@ -373,7 +415,13 @@ class ChatService:
         if a.greeting:
             reason = "greeting"
             return done(self._response(req, MSG_GREETING, "greeting", notices=notices))
-        if a.live_status:
+        normalized = normalize_query(question)
+        gate_status = (
+            self.d.knowledge and re.search(r"\bgates?\b|गेट", normalized)
+            and re.search(r"\b(?:now|today|abhi|aaj)\b|अभी|आज", normalized)
+            and re.search(r"\b(?:open|working|closed|down|chalu)\b|चालू|खुल[ाे]|बंद|काम कर", normalized)
+        )
+        if a.live_status or gate_status:
             reason = "live_operation_request"
             return done(self._response(req, MSG_LIVE, "live_status", notices=notices))
         supplemental = None
@@ -392,6 +440,9 @@ class ChatService:
             reason = "restricted_account_or_policy_request"
             return done(self._response(req, restriction, "insufficient_evidence", notices=notices))
 
+        if self.d.knowledge and topic_key == AIRPORT_TOPIC and not a.pii_types and not a.action_request:
+            reason = "dated_airport_coverage"
+            return done(self._airport_coverage(req, supplemental, notices))
         if expired and topic_key == TRIAL_TOPIC:
             reason = "trial_source_expired"
             text = (f"The published trial window ended on {expired}. I can't confirm an extension or wider availability. "
@@ -402,7 +453,7 @@ class ChatService:
             response.answer = text
             return done(response)
 
-        topic = general_topic(question)
+        topic = general_topic(question, qwen=req.provider == "novita")
         if topic and s.general_knowledge_enabled and not a.pii_types:
             # Definition requests are distinct from nearby troubleshooting FAQs.
             # If no approved source actually defines the term, use the narrow general mode.
@@ -430,6 +481,26 @@ class ChatService:
         if summary and _is_follow_up(question) and not query_intent(question):
             retrieval_query = summary + " " + retrieval_query
         search = self.d.retriever.retry_search if retrieval_retry else self.d.retriever.search
+        if focus in {"introduction", "children"}:
+            targets = {
+                "introduction": (
+                    ("general_01_introduction.md", {"question": "What is Digi Yatra?"}),
+                    ("general_02_how_it_works.md", {"section": "At the Airport"}),
+                ),
+                "children": (
+                    ("allowed_passengers.md", {"question": "Are passengers with infants allowed to use DigiYatra?"}),
+                    ("support_02_registration_profile.md", {"question": "How do I add my child or other family members?"}),
+                    ("support_05_usage_eligibility.md", {"question": "Traveling with Infants/Children without Aadhaar"}),
+                ),
+            }[focus]
+            preferred = [hit for source, fields in targets if (hit := self.d.retriever.approved_passage(source, **fields))]
+            ordinary_search = search
+
+            def search(query, top_k):
+                if len(preferred) >= top_k:
+                    return preferred[:top_k]
+                pinned = {hit.chunk_id for hit in preferred}
+                return (preferred + [hit for hit in ordinary_search(query, top_k) if hit.chunk_id not in pinned])[:top_k]
         if trial:
             candidates = hits = [supplemental]
         elif s.rag_context_optimization_enabled:
@@ -450,7 +521,7 @@ class ChatService:
         log.info("chat retrieval provider=%s locale=%s retry=%s candidates=%d selected=%d",
                  req.provider, req.locale, retrieval_retry, len(candidates), len(hits))
         same_evidence = retrieval_retry and {h.chunk_id for h in hits} == (previous_evidence or set())
-        if same_evidence and (not hits or intent not in SCOPED_INTENTS):
+        if same_evidence and (not hits or intent not in SCOPED_INTENTS and focus not in {"airport_retention", "children"}):
             reason = "retry_no_new_evidence"
             return done(no_evidence())
         if not hits and intent == "service_cost":
@@ -474,7 +545,8 @@ class ChatService:
             return done(self._response(req, msg, status, notices=notices), top)
 
         evidence = format_evidence(hits, self.d.conflict_guidance)
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        prompt = SYSTEM_PROMPT + ("\n" + guidance if guidance else "")
+        messages: list[dict] = [{"role": "system", "content": prompt}]
         if summary:
             messages.append({"role": "user", "content": "Earlier topic hints only, not evidence: " + summary})
         for t in bounded_history:
@@ -534,11 +606,22 @@ class ChatService:
         if grounded.dropped or grounded.reattributed or grounded.removed_markers:
             log.info("chat grounding dropped=%d reattributed=%d removed_markers=%d",
                      grounded.dropped, grounded.reattributed, grounded.removed_markers)
+        if focus == "introduction" and not qwen_scope_score(focus, grounded.text):
+            return await insufficient("introduction_missing_purpose", top, result.model)
         if not grounded.cited_hits or not grounded.text:
             log.warning("chat ungrounded_after_sentence_check")
             return await insufficient("all_claims_unsupported", top, result.model)
         checked.text = grounded.text
-        if not trial and not retrieval_retry and not scoped_answer_complete(intent, checked.text, question):
+        if focus == "airport_retention" and re.search(
+            r"(?i)\b(?:for|at least|exactly)\s+24\s*hours?\b", checked.text
+        ):
+            return await insufficient("retention_duration_not_deadline", top, result.model)
+        verified_wallet = (focus == "digilocker_comparison" and supplemental is not None
+                           and supplemental.source_file == "supplement:digilocker-overview")
+        scope_target = 3 if focus == "connectivity" else int(focus == "digilocker_comparison" and not verified_wallet)
+        scope_score = qwen_scope_score(focus, checked.text)
+        scoped_complete = scoped_answer_complete(intent, checked.text, question)
+        if not trial and not retrieval_retry and (not scoped_complete or scope_score < scope_target):
             log.info("chat fallback_decision provider=%s locale=%s intent=%s reason=missing_documented_scope retry=False",
                      req.provider, req.locale, intent)
             try:
@@ -546,7 +629,7 @@ class ChatService:
             except AssistantUnavailable:
                 pass  # A failed second attempt does not erase the first grounded answer.
             else:
-                if retry.status == "answered":
+                if retry.status == "answered" and (not scope_target or qwen_scope_score(focus, retry.answer) >= scope_score):
                     return retry
         if procedure_requested(question) and not re.search(r"(?m)^\d+[.)]\s", checked.text):
             sentences = re.split(r"(?<=[.!?।])\s+", checked.text)
@@ -554,6 +637,20 @@ class ChatService:
                 # Format only already-validated sentences; never generate extra actions.
                 checked.text = "\n".join(f"{i}. {sentence}" for i, sentence in enumerate(sentences, 1))
         cited_chunks = [hits[i] for i in grounded.cited_hits]
+        if verified_wallet and supplemental and not qwen_scope_score(focus, checked.text):
+            if supplemental not in cited_chunks:
+                cited_chunks.append(supplemental)
+            marker = cited_chunks.index(supplemental) + 1
+            definition = ("डिजीलॉकर आधिकारिक दस्तावेज़ रखने और साझा करने का डिजिटल वॉलेट है" if req.locale == "hi"
+                          else "DigiLocker is a digital wallet for accessing and sharing official documents")
+            checked.text += f"\n\n{definition} [{marker}]" + ("।" if req.locale == "hi" else ".")
+        if focus == "children" and intent is None:
+            for hit, fact in missing_minor_facts(checked.text, hits, req.locale):
+                if hit not in cited_chunks:
+                    cited_chunks.append(hit)
+                marker = cited_chunks.index(hit) + 1
+                punctuation = fact[-1]
+                checked.text += f"\n\n{fact[:-1]} [{marker}]{punctuation}"
         if any(c.conflict_ids for c in cited_chunks):
             notices.append(NOTICE_CONFLICT)
         sources = [_source(k, c) for k, c in enumerate(cited_chunks, 1)]
