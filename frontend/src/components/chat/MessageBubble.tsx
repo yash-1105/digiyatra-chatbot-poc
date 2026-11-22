@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, FlaskConical, Info, RotateCw, Sparkles } from "lucide-react";
+import { AlertCircle, FlaskConical, Info, RotateCw } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { FeedbackControls } from "./FeedbackControls";
 import { useChatText } from "./chat-language";
@@ -65,10 +65,6 @@ export function MessageBubble({ message, canRetry, onRetry, onFeedback }: Props)
         {isMock ? (
           <span className="mb-1.5 inline-flex items-center gap-1 rounded bg-warning-soft px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-warning">
             <FlaskConical aria-hidden="true" className="h-3 w-3" /> Mock response · not AI
-          </span>
-        ) : message.origin === "live" && message.status === "answered" ? (
-          <span className="mb-1.5 inline-flex items-center gap-1 rounded bg-brand-soft px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-brand">
-            <Sparkles aria-hidden="true" className="h-3 w-3" /> {t.generated}
           </span>
         ) : null}
         <div>
