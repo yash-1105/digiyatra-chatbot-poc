@@ -2,7 +2,7 @@
 
 ## 1. Workspace restrictions (MUST follow)
 
-- The ONLY authorised workspace is `~/Yash/digiyatra-chatbot-poc`. Run `pwd -P` to confirm before working.
+- The ONLY authorised workspace is `/home/claudeuser/Yash/digiyatra-latest`. Run `pwd -P` to confirm before working.
 - Do not inspect, search, read, modify or delete other projects on this server. Never follow symlinks out of this directory.
 - No `sudo`, no system-wide installs, no system maintenance or cleanup commands.
 - Keep everything project-local: dependencies, npm cache (`.cache/npm`, set in `frontend/.npmrc`), Python venvs (`backend/.venv`), temp files (`.cache/`).
@@ -10,7 +10,11 @@
 - Never print, hardcode or commit credentials. Secrets live only in untracked `.env*` files. Never put secrets in `NEXT_PUBLIC_*` variables.
 - `SARVAM_API_KEY` lives ONLY in `backend/.env` (chmod 600). Never echo it, never `cat` that file, never put it in frontend code, logs, test output, screenshots or Git. Check presence only (e.g. `grep -c '^SARVAM_API_KEY=.\+' backend/.env`).
 - Sarvam AI is the ONLY generative provider. Do not substitute another LLM provider.
-- Do not deploy from this (Hostinger) server. Do not push to GitHub.
+- Git/GitHub from this server is ALLOWED for the existing repo `yash-1105/digiyatra-chatbot-poc` only: develop, test, commit and push. Never create new GitHub repositories.
+  - Use the project-local GitHub CLI only: `.tools/bin/gh` (config/token in `.tools/gh-config`, chmod 700, excluded via `.git/info/exclude`). Repo-local credential helper + identity live in `.git/config`; never change global Git config, shell profiles or PATH. Never print or commit the token.
+  - Push only after local tests pass, `git status`/`git diff --cached` show no private files, and `git push --dry-run` succeeds. The local `.git/hooks/pre-push` guard blocks `.env*`, `.tools/`, `knowledge/{raw,curated,deploy}/`, `knowledge/approval_manifest.json`, databases and keys — never bypass it (`--no-verify`).
+  - Never commit private knowledge documents (`knowledge/raw`, `knowledge/curated`, `knowledge/deploy`, the approval manifest, `design/dgca-reference.png`), API keys, `.env*` files or credentials.
+- Do NOT deploy to production (Railway/Vercel) from this (Hostinger) server until the existing deployment mechanisms are verified and the owner explicitly approves. No new Railway/Vercel projects, no billing changes. A GitHub push must not be treated as a deployment; see `docs/DEPLOYMENT_HANDOFF.md` (Railway needs the private knowledge corpus, which is NOT in GitHub).
 - Development servers bind to `127.0.0.1` only — never `0.0.0.0` or a public port. Preview via SSH port-forwarding.
 - No administrator password is ever hardcoded; auth is delegated to the backend (Milestone 3).
 
@@ -32,7 +36,7 @@
 ## 3. Architecture
 
 ```
-digiyatra-chatbot-poc/
+digiyatra-latest/   (GitHub: yash-1105/digiyatra-chatbot-poc)
 ├── frontend/      Next.js 15 (App Router) + TypeScript + Tailwind CSS v4   ← Milestone 1 (done)
 ├── backend/       FastAPI + Sarvam AI (sarvam-105b) + LanceDB RAG          ← Milestone 2
 ├── knowledge/     raw/ originals (read-only) · approval_manifest.json · curated/ (generated)
