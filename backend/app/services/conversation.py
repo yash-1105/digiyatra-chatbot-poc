@@ -56,6 +56,11 @@ class ConversationStore:
             conv = self._data.get(conversation_id)
             return "; ".join(INTENT_TERMS[t] for t in conv.topics[-4:]) if conv else ""
 
+    def forget(self, conversation_id: str) -> bool:
+        """Drop the in-memory context of a conversation (user pressed "clear history")."""
+        with self._lock:
+            return self._data.pop(conversation_id, None) is not None
+
     def append(self, conversation_id: str, user: str, assistant: str) -> None:
         with self._lock:
             conv = self._data.setdefault(conversation_id, Conversation())

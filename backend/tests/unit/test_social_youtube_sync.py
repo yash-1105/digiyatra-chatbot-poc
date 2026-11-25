@@ -404,11 +404,15 @@ MEDIA_RECORDS = [
 VERIFIED_URLS = {r.url for r in MEDIA_RECORDS}
 
 
-@pytest.fixture
-def media_retriever(tmp_path, chunks):
-    index = KnowledgeIndex(tmp_path / "media-index")
+def build_media_retriever(path, chunks):
+    index = KnowledgeIndex(path / "media-index")
     index.build(list(chunks) + [record_chunk(r, i) for i, r in enumerate(MEDIA_RECORDS)], LexicalEmbedder())
     return Retriever(index, index.load_embedder())
+
+
+@pytest.fixture
+def media_retriever(tmp_path, chunks):
+    return build_media_retriever(tmp_path, chunks)
 
 
 def test_media_chunks_provenance_video_exclusion_expiry_and_cache_revision(media_retriever, retriever):

@@ -64,4 +64,8 @@ export class MockChatClient implements ChatClient {
     void _feedback;
     await delay(150);
   }
+
+  async forget(_conversationId: string): Promise<void> {
+    void _conversationId;
+  }
 }

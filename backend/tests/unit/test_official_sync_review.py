@@ -277,3 +277,21 @@ def test_bundle_as_pending_requeues_every_approval(env, tmp_path):
     import_bundle(prod, bundle, as_pending=True)
     assert {r.status for r in records(prod)} == {"pending_review"}
     prod.engine.dispose()
+
+
+def test_publication_rollback_restores_previous_version(env):
+    from app.sync.publish import active_publication, rollback
+
+    settings, db = env
+    run(settings, db, Site({MOCA: MOCA_HTML}), ["moca-digital-initiatives"])
+    first = active_publication(db)
+    run(settings, db, Site({PIB: PIB_HTML}), ["pib-2331200"])
+    rec = records(db, source_id="pib-2331200")[0]
+    J.review_record(db, rec.id, "verified", "reviewer")
+    J.SyncJob(settings, db, index_validator=validator_ok).run(trigger="manual", publish_only=True)
+    second = active_publication(db)
+    assert second.id != first.id and second.record_count == first.record_count + 1
+    assert rollback(db).id == first.id and active_publication(db).id == first.id
+    with pytest.raises(ValueError):
+        rollback(db, first.id)  # already active
+    assert rollback(db, second.id).id == second.id

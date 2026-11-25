@@ -98,7 +98,9 @@ _DECLINE = re.compile(
 )
 
 _FOLLOW_UP = re.compile(
-    r"(?i)^(and|also|what about|how about|then|so|but|ok|okay)\b|\b(it|this|that|they|them|their|she|he|her|him|those|these|there|same|above|too)\b"
+    r"(?i)^(and|also|what about|how about|then|so|but|ok|okay|sorry|aur|toh|और|तो)\b|"
+    r"\b(it|this|that|they|them|their|she|he|her|him|those|these|there|same|above|too|ye|yeh|isko|iske|iska|unhe|unko|"
+    r"wo|woh|instead|meant)\b|(?:^|\s)(यह|इसे|इसके|इसका|इसको|उन्हें|उनको|वह|वे)(?=\s|$|[?।])"
 )
 
 
@@ -126,6 +128,7 @@ _ERROR_MAP = {
 }
 
 
+ASSISTANT_HISTORY_CHARS = 360
 VIDEO_REQUEST = re.compile(r"\b(?:videos?|tutorials?|youtube|watch|walkthrough|demo)\b|वीडियो|विडियो|ट्यूटोरियल|dikhao|dikha", re.I)
 PROCEDURE = re.compile(r"\bhow (?:do|can|to)\b|\bsteps?\b|\b(?:register|enrol|enroll|upload|add|delete|share)\b|"
                        r"कैसे|kaise", re.I)
@@ -312,40 +315,52 @@ class ChatService:
         """Attach one verified official video (metadata-only) when the user asks for a video, or a
         procedural answer would benefit from one. Never changes the grounded answer's claims; links come
         only from verified records; nothing is fetched."""
-        if resp.status not in ("answered", "insufficient_evidence") or a.pii_types or a.injection or a.action_request:
-            return resp
         q = normalize_query(req.message)
         explicit = bool(VIDEO_REQUEST.search(q) or VIDEO_REQUEST.search(req.message))
+        # "Can you show me a video?" alone looks off-topic; it is in scope only if the user's own earlier
+        # Digi Yatra questions resolve it to a verified official video (handled below).
+        allowed = ("answered", "insufficient_evidence") + (("out_of_scope",) if explicit else ())
+        if resp.status not in allowed or a.pii_types or a.injection or a.action_request:
+            return resp
         procedural = bool(PROCEDURE.search(q) or PROCEDURE.search(req.message))
         if not (explicit or (procedural and resp.status == "answered")):
             return resp
+        contextual_only = resp.status == "out_of_scope"
         try:
-            videos = self.d.retriever.related_videos(req.message, 1)
+            videos = [] if contextual_only else self.d.retriever.related_videos(req.message, 1)
+            if not videos and explicit:
+                # "Can you show me a video?" after "How do I register?": resolve the subject from the
+                # user's own recent questions (never from assistant text).
+                previous = [t.content for t in self._history(req) if t.role == "user"][-3:]
+                for prior in reversed(previous):
+                    if videos := self.d.retriever.related_videos(f"{prior} {req.message}", 1):
+                        break
         except Exception as exc:  # noqa: BLE001 - recommendations are optional
             log.warning("video recommendation failed error=%s", type(exc).__name__)
             return resp
         known = {s.url for s in resp.sources}
-        videos = [v for v in videos if v.urls and v.urls[0] not in known]
+        videos = [v for v in videos if v.urls and v.urls[0] not in resp.answer]
         if not videos:
             return resp
         v = videos[0]
-        src = _source(len(resp.sources) + 1, v)
         url = v.urls[0]
+        # Already cited by an approved document: name it in the answer without a duplicate source.
+        src_list = [] if url in known else [_source(len(resp.sources) + 1, v)]
         if req.locale == "hi":
             line = f"आधिकारिक डिजी यात्रा फ़ाउंडेशन वीडियो देखें: “{v.doc_title}” — {url}"
         else:
             line = f"You can also watch the official Digi Yatra Foundation video “{v.doc_title}”: {url}"
-        if resp.status == "insufficient_evidence" and explicit:
+        if resp.status in ("insufficient_evidence", "out_of_scope") and explicit:
             # Recommend the verified video without claiming anything about its spoken content.
             line = (f"यह आधिकारिक डिजी यात्रा फ़ाउंडेशन वीडियो इस विषय से जुड़ा है: “{v.doc_title}” — {url}" if req.locale == "hi"
                     else f"This official Digi Yatra Foundation video covers this topic: “{v.doc_title}”: {url}")
-            return resp.model_copy(update={"answer": line, "status": "answered", "sources": [*resp.sources, src],
+            return resp.model_copy(update={"answer": line, "status": "answered", "sources": [*resp.sources, *src_list],
                                            "answer_mode": "knowledge"})
         if explicit:  # the user asked for a video: lead with it, then the grounded answer
             lead = (f"हाँ — {line}" if req.locale == "hi" else
                     f"Yes — the official Digi Yatra Foundation video “{v.doc_title}”: {url}")
-            return resp.model_copy(update={"answer": f"{lead}\n\n{resp.answer.strip()}", "sources": [*resp.sources, src]})
-        return resp.model_copy(update={"answer": f"{resp.answer.rstrip()}\n\n{line}", "sources": [*resp.sources, src]})
+            return resp.model_copy(update={"answer": f"{lead}\n\n{resp.answer.strip()}", "sources": [*resp.sources, *src_list]})
+        return resp.model_copy(update={"answer": f"{resp.answer.rstrip()}\n\n{line}", "sources": [*resp.sources, *src_list]})
 
     async def handle(self, req: ChatRequest) -> ChatResponse:
         """Answer the question, then record privacy-safe analytics (failures never affect the reply)."""
@@ -386,6 +401,9 @@ class ChatService:
             else:
                 resp = await self._handle(req)
             resp = self._recommend_video(req, a, resp)
+            if a.pii_types:
+                # Tell the browser what may be persisted: the server-side redaction, never the raw text.
+                resp = resp.model_copy(update={"pii_redacted": True, "redacted_message": a.redacted_text[:1000]})
         except AssistantUnavailable:
             await self._faq_metric(req, cache_outcome, started)
             await self._record(req, uuid.uuid4().hex, asked_at, classify_text, "error", 0, bool(a.pii_types), started)
@@ -607,7 +625,13 @@ class ChatService:
         if summary:
             messages.append({"role": "user", "content": "Earlier topic hints only, not evidence: " + summary})
         for t in bounded_history:
-            messages.append({"role": t.role, "content": t.content})
+            if t.role == "assistant":
+                # Earlier replies are conversation context only: possibly outdated, never evidence, and
+                # truncated so stored history does not inflate every provider request.
+                content = t.content if len(t.content) <= ASSISTANT_HISTORY_CHARS else t.content[:ASSISTANT_HISTORY_CHARS] + "…"
+                messages.append({"role": "assistant", "content": "[Earlier reply — not evidence; current evidence overrides it] " + content})
+            else:
+                messages.append({"role": t.role, "content": t.content})
         turn = build_user_turn(question, evidence, compact=s.rag_context_optimization_enabled, trial=trial)
         if s.conversational_answers_enabled:
             turn += "\nLead with the answer in everyday language. Use 1–4 sentences for simple questions. Avoid source narration."

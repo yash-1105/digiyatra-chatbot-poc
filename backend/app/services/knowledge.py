@@ -195,7 +195,9 @@ def supplemental_topic(question: str, intent: str | None) -> str | None:
         "digi yatra" in q and re.search(r"\b(?:immigration|passport checks?)\b", q)
     ) or (
         ("international" in q or "e-passport" in q) and re.search(r"\b(?:trial|pilot|rollout|2027)\b", q)
-    ) or ("digi yatra" in q and re.search(r"\bhow\b.{0,45}\bnfc\b", q)):
+    ) or ("digi yatra" in q and re.search(r"\bhow\b.{0,45}\bnfc\b", q)) or (
+        re.search(r"\be-?passport\b", q) and re.search(r"\b(?:regist\w*|enrol\w*|credential|work|how|nfc)\b", q)
+    ) or re.search(r"\bdy-?ipt\b", q):
         return TRIAL_TOPIC
     if domestic_airport_catalog(question, intent):
         return AIRPORT_TOPIC

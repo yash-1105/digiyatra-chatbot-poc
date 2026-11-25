@@ -382,3 +382,62 @@ railway config migrate status             # verify; `railway config migrate undo
 ```
 
 Commit `.railway/railway.ts` only after reviewing that it contains `preserve()` placeholders and no secret values. Delete `railway.toml` only after the cutover. The earlier deployment report notes that the service's Dockerfile path and settings were also set explicitly on Railway, which limits the risk at the cutoff. Run `railway config plan` to confirm this. The new cron service is created through IaC or the dashboard, because Config as Code is unavailable to new services.
+
+## 19. Production rollout runbook for Tasks 1–3 (prepared; NOT executed)
+
+**None of these steps has been run.** Each one needs separate owner approval. Run them from the authenticated laptop, not from Hostinger. Production keys stay in Railway and Vercel.
+
+**0. Prerequisites**
+- Migrate Railway Config as Code to IaC before 2026-12-01 (§18).
+- Pull `feature/official-source-sync`, or `main` once merged.
+- Place the private `knowledge/deploy/` folder in the checkout.
+- `cd backend && python -m pytest`, then `scripts/make_railway_context.sh && scripts/make_railway_context.sh --job`.
+- Check both inventories in `.cache/railway-context*-inventory.json`: `clean=true`, 119 corpus chunks.
+
+**1. Back up and plan.** Take a Railway PostgreSQL backup or snapshot. Migrations 0005 and 0006 are **additive** (new tables and nullable columns only): existing `knowledge_revision`, admin, analytics and FAQ rows are untouched. The rollback path is `alembic downgrade 0004_supplemental_knowledge`. Prefer leaving the new tables in place and disabling the feature flags.
+
+**2. Deploy the backend** (existing private upload path; never a GitHub-only build):
+
+```bash
+railway up .cache/railway-context --path-as-root --no-gitignore --project <project-id> --environment production --service <backend-service> --detach
+```
+
+At start-up, `scripts/start.sh` runs `db-upgrade` (0005 and 0006), then `ensure-index`. Expect "Index OK", or a rebuild with 119 corpus chunks plus 0 official records. Health should show `index.chunks` = 119 and `official_records` = 0 until a publication exists.
+
+**3. Frontend (Vercel):** `cd frontend && vercel --prod` on the existing project. This adds browser-local history, the history notice and source-type labels. No new variables are needed.
+
+**4. Enable serving** (after the deploy is verified): set `OFFICIAL_KNOWLEDGE_SERVING_ENABLED=true` on the backend service and redeploy or restart. Keep `KNOWLEDGE_AUTO_PUBLISH_ENABLED=false` and `FAQ_CACHE_ENABLED=false`.
+
+**5. Initial production ingestion** (one-off, from a Railway shell on the backend service):
+```bash
+cd /app/backend && OFFICIAL_SOURCE_LOOKUP_ENABLED=true python -m app.cli sync-run --trigger initial
+python -m app.cli sync-review-report --out /tmp/review   # copy out privately; decide per group
+python -m app.cli sync-review-apply /tmp/review/<pack>.decisions.json --reviewer "<name>"
+python -m app.cli sync-publish && python -m app.cli ops-report
+```
+Alternatively, import the locally reviewed bundle (§17: `sync-import-bundle --dry-run`, then for real; insert-only).
+
+**6. Create the cron service** (one service, approval required):
+1. New empty service `knowledge-sync` in the same project and environment.
+2. Variables: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `OFFICIAL_SOURCE_LOOKUP_ENABLED=true`, `ENVIRONMENT=production`, `RAILWAY_DOCKERFILE_PATH=backend/Dockerfile`. Optionally add `YOUTUBE_API_KEY`. No LLM keys.
+3. Settings: start command `./scripts/sync.sh`; cron schedule `30 21 * * 6`; restart policy `NEVER`; no public domain, no volume, 1 replica.
+4. Upload the **job** context, which contains no `railway.toml`, so the API start command and health check can never apply to the job:
+   ```bash
+   railway up .cache/railway-context-sync --path-as-root --no-gitignore --project <project-id> --environment production --service knowledge-sync --detach
+   ```
+
+**7. Verify termination:** after the first scheduled or manual run, the deployment log should end with `sync finished status=…` and the process should exit (code 0, 1 or 2). `python -m app.cli ops-report` should show `last_successful_sync` and `next_scheduled_refresh`. There must be no continuously running process.
+
+**8. Manual refresh:** from a Railway shell, `OFFICIAL_SOURCE_LOOKUP_ENABLED=true python -m app.cli sync-run --source <ID>`. **Logs:** Railway → `knowledge-sync` → Deployments → logs (reason codes only, no content).
+
+**9. Disable the scheduler:** clear the cron schedule, or remove or pause the `knowledge-sync` service. Serving continues from the last publication. Disable serving entirely with `OFFICIAL_KNOWLEDGE_SERVING_ENABLED=false`.
+
+**10. Roll back knowledge:** `python -m app.cli sync-rollback`, or `sync-rollback --to <publication-id>`. API instances switch within `OFFICIAL_KNOWLEDGE_REFRESH_CHECK_S` (300 s), with no redeploy. Individual records can be withdrawn with `sync-review <id> revoked --reviewer <name>`, followed by `sync-publish`.
+
+**11. Post-deployment validation:**
+```bash
+PROXY_SHARED_SECRET=... python -m evaluation.expanded --live --url https://digiyatra-chatbot-poc.vercel.app --inr <cap> --usd <cap>
+```
+This uses the signed synthetic route and enforced spending caps. Also run `frontend/scripts/history-e2e.mjs` against a **synthetic** acceptance stack, never production analytics.
+
+**Cost estimate (projected, not measured on Railway):** the job runs about 1–2 minutes weekly with 2–30 CPU-seconds and a ~280 MB peak, which is under $0.01 per month at list prices ($20 per vCPU-month, $10 per GB-month). The API's hot index rebuild after a publication takes about 2 s. There is no new database, Redis or always-on worker.

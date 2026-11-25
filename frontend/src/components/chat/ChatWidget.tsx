@@ -242,6 +242,9 @@ function ChatPanel({ chat }: { chat: ReturnType<typeof useChat> }) {
           </div>
 
           <ChatComposer ref={inputRef} disabled={loading} onSend={send} />
+          <p data-testid="history-note" className="border-t border-line-soft bg-surface px-3 py-1 text-[0.65rem] leading-snug text-ink-soft">
+            {t.historyNote}
+          </p>
         </div>
       ) : null}
 

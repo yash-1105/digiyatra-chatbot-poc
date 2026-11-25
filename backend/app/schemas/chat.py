@@ -64,6 +64,10 @@ class ChatResponse(BaseModel):
     locale: Literal["en", "hi"] = "en"
     cached: bool = False
     answer_mode: Literal["knowledge", "general", "insufficient"] = "knowledge"
+    # Set when the question contained personal data: browsers persist redacted_message instead of the
+    # typed text (history stays on the device; the server never stores chat text).
+    pii_redacted: bool = False
+    redacted_message: str | None = None
 
 
 class FeedbackRequest(BaseModel):
@@ -88,3 +92,8 @@ class HealthResponse(BaseModel):
     index: dict
     llm: dict
     database: dict = {}
+
+
+class ForgetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversation_id: str = ConversationId

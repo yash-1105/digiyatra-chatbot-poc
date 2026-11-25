@@ -190,6 +190,29 @@ def cmd_sync(settings, args) -> int:
             code = J.SyncJob(settings, db).run(trigger="manual", publish_only=True)
             print(json.dumps(J.status_report(db, settings)["active_publication"], indent=2))
             return code
+        if args.cmd == "sync-rollback":
+            from app.sync.publish import rollback
+
+            pub = rollback(db, args.to)
+            print(f"Publication {pub.id} is active again ({pub.record_count} records). API instances switch "
+                  f"within OFFICIAL_KNOWLEDGE_REFRESH_CHECK_S.")
+            return 0
+        if args.cmd == "ops-report":
+            from app.services.usage import UsageService
+
+            J.sync_registry(db, settings)
+            status = J.status_report(db, settings)
+            report = {
+                "knowledge": {k: status[k] for k in ("knowledge_counts", "verified_total", "verified_but_expired",
+                                                     "pending_review_total", "active_publication",
+                                                     "last_successful_sync", "next_scheduled_refresh",
+                                                     "sources_due", "sources_failed", "schedule")},
+                "last_runs": status["recent_runs"][:3],
+                # Provider usage, tokens, estimated cost, latency, cache outcomes (aggregates only; no chat text).
+                "usage": UsageService(db, settings).report(max(1, min(args.days, 90))),
+            }
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+            return 0
         if args.cmd == "sync-status":
             J.sync_registry(db, settings)
             print(json.dumps(J.status_report(db, settings), indent=2, ensure_ascii=False, default=str))
@@ -312,6 +335,10 @@ def main(argv: list[str] | None = None) -> None:
     sr = sub.add_parser("sync-run")
     sr.add_argument("--source", action="append", help="Force-refresh these registered source IDs only")
     sr.add_argument("--trigger", default="schedule", choices=("schedule", "manual", "initial"))
+    rb = sub.add_parser("sync-rollback")
+    rb.add_argument("--to", type=int, help="Publication id (default: the previous one)")
+    ops = sub.add_parser("ops-report")
+    ops.add_argument("--days", type=int, default=7)
     for name in ("sync-status", "sync-pending", "sync-publish"):
         sub.add_parser(name)
     for name in ("sync-enable", "sync-disable"):
@@ -445,7 +472,7 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(f"FAQ maintenance failed ({type(exc).__name__})")
         finally:
             db.engine.dispose()
-    elif args.cmd.startswith("sync-"):
+    elif args.cmd.startswith("sync-") or args.cmd == "ops-report":
         sys.exit(cmd_sync(settings, args))
     elif args.cmd == "create-admin":
         if not sys.stdin.isatty():

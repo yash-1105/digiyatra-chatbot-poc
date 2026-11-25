@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import rate_limited
-from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse, FeedbackRequest
+from app.schemas.chat import ChatRequest, ChatResponse, ErrorResponse, FeedbackRequest, ForgetRequest
 from app.security.anonymous import conversation_scope
 from app.security.evaluation import synthetic_request
 from app.security.rate_limit import client_key
@@ -61,4 +61,16 @@ async def feedback(body: FeedbackRequest, request: Request) -> Response:
         raise HTTPException(404, detail={"code": "unknown_message", "message": "This answer can no longer receive feedback."})
     if outcome.reason == "expired":
         raise HTTPException(410, detail={"code": "feedback_expired", "message": "Feedback for this answer has expired."})
+    return Response(status_code=204)
+
+
+@router.post("/forget", status_code=204, responses=_ERRORS, dependencies=[Depends(rate_limited)])
+async def forget(body: ForgetRequest, request: Request) -> Response:
+    """"Clear conversation": drop the server's short-lived in-memory context for this browser's
+    conversation. Scoped by the anonymous cookie, so one browser can never clear another's context.
+    Always 204 (no existence oracle). Analytics hold no chat text and are unaffected."""
+    scoped_id = conversation_scope(request, body.conversation_id)
+    service = request.app.state.chat_service
+    if scoped_id is not None and service is not None:
+        service.d.conversations.forget(scoped_id)
     return Response(status_code=204)

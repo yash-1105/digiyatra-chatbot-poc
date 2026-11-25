@@ -7,6 +7,13 @@ import unicodedata
 
 # Query synonyms and claim concepts. Unknown Devanagari words remain visible to validation.
 TERMS = {
+    # Task 3 additions (expanded Hindi evaluation): channels, announcements, consent, deletion, Smart Share.
+    "शिकायत": "complaint", "फ़ोटो": "photo", "फ़ॉलो": "follow", "फॉलो": "follow", "यूट्यूब": "youtube",
+    "चैनल": "channel", "घोषणाएँ": "announcements", "घोषणाएं": "announcements", "घोषणा": "announcement",
+    "हटाऊँ": "delete", "हटाऊं": "delete", "स्मार्ट शेयर": "smart share", "क्रैश": "crash",
+    "बंद हो जाता": "crashing", "डीवाई-आईपीटी": "dy-ipt", "ट्विटर": "twitter", "एक्स (ट्विटर)": "x twitter",
+    "बदल सकता": "change", "बदलूँ": "change", "ट्यूटोरियल": "tutorial", "फ़ोन बदल लिया": "changed phone",
+    "साझा करने से पहले": "before sharing consent privacy",
     "डिजी यात्रा": "digi yatra",
     "एयर इंडिया": "air india", "इंडिगो": "indigo", "इण्डिगो": "indigo",
     "चुनिंदा": "selected", "चयनित": "selected", "नागरिक": "nationals", "नागरिकों": "nationals",
@@ -378,6 +385,19 @@ HINGLISH = {
     "aaj": "today",
     "abhi": "right now",
     "chal rahe": "working",
+    "nahi hua": "failed", "chashma": "glasses", "pehen": "wear", "ke saath": "with",
+    # Task 3: common Hinglish question forms observed in the expanded evaluation.
+    "kya hota hai": "what is", "kya hai": "what is", "kya hain": "what are",
+    "kaam karta hai": "work", "kaam karti hai": "work", "kaam karega": "work",
+    "fayde": "benefits", "faayde": "benefits", "fayda": "benefit",
+    "wapas": "back restore", "milega": "get", "change kar liya": "changed", "badal liya": "changed",
+    "share karne se pehle": "before sharing consent privacy", "baar baar crash ho raha": "keeps crashing freezing hanging", "baar baar": "repeatedly", "crash ho raha": "crashing", "band ho raha": "crashing",
+    "kya karu": "what should i do", "kya karun": "what should i do", "kya kare": "what should i do",
+    "kya karein": "what should i do", "hatana": "delete", "hataye": "delete", "jodna": "add",
+    "dikhao": "show", "dikha": "show", "batao": "tell", "samjhane wala": "explaining",
+    "kab": "when", "khatam": "end", "chalega": "continue", "shikayat": "complaint", "sampark": "contact",
+    "surakshit": "safe", "rakhta": "keep", "rakhti": "keep", "kitne time": "how long", "kitne din": "how long",
+    "mausam": "weather", "purani": "old", "naye": "new", "nayi": "new",
 }
 HINDI_STOP = {"करता"} | set(
     "है हैं था थी थे हो होता होती होते होगा होगी होंगे करना करते करती कर करें किया कीजिए करके होने होना होने लिए से में पर और या तो को का की के एक यह उस इस तक कुछ तरह बारे साथ बाद पहले फिर यदि लेकिन सकते सकता सकती चाहिए क्या कैसे कहाँ कहां कौन सा सी से ही भी अब अपने अपनी अपना इस्तेमाल उपयोग द्वारा माध्यम रूप जैसे जाएगा जाएगी जाते जाती सकते वाला वाली वहां वहाँ वहां मिल जाता जाती जाएं जाएँ ऐसा ऐसे अच्छी पूरी तौर अनुसार बताएं बताइए कृपया कृप्या जब तब तथा तक अधिक कई बार दूसरे अन्य इसलिए इन उन हुए हुआ हुई गए गई जाए रहेगा रहती रहतीं कोड दिए दी दिया देना देती देता दें".split()
@@ -403,6 +423,8 @@ def concepts(text: str, *, hinglish: bool = True) -> str:
 
 def normalize_question(text: str) -> str:
     q = concepts(text).lower()
+    # Hinglish "X kya hai?" became "X what is?": restore English order for definition routing.
+    q = re.sub(r"^(.{2,60}?)\s+what (is|are)\s*([?.।!]*)$", r"what \2 \1\3", q.strip())
     q = re.sub(
         r"\b(otp|nfc|qr(?: code)?|android|facial recognition)\s+(?:kya (?:hota )?hai|क्या (?:होता )?है)\s*[?.।!]*$",
         r"what is \1?",

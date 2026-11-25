@@ -146,6 +146,32 @@ def publish(db: Database, run_id: int | None, validate) -> tuple[KnowledgePublic
     return pub, True
 
 
+def rollback(db: Database, to_id: int | None = None) -> KnowledgePublication:
+    """Re-activate an earlier publication (default: the one before the active one). Its records must
+    still match its digest. The API picks it up through the normal version check (no redeploy)."""
+    with db.session() as s:
+        if s.get_bind().dialect.name == "postgresql":
+            s.execute(text("LOCK TABLE knowledge_publication IN EXCLUSIVE MODE"))
+        active = s.scalar(select(KnowledgePublication).where(KnowledgePublication.status == "active"))
+        if to_id is None:
+            q = select(KnowledgePublication).where(KnowledgePublication.status == "superseded")
+            if active is not None:
+                q = q.where(KnowledgePublication.id < active.id)
+            target = s.scalar(q.order_by(KnowledgePublication.id.desc()).limit(1))
+        else:
+            target = s.get(KnowledgePublication, to_id)
+        if target is None or target.status == "active":
+            raise ValueError("No earlier publication to roll back to")
+        rows = list(s.scalars(select(OfficialRecord).where(OfficialRecord.id.in_(target.record_ids or [-1]))))
+        if digest_of(rows) != target.digest:
+            raise ValueError("Target publication no longer matches its records")
+        if active is not None:
+            active.status = "superseded"
+            s.flush()
+        target.status = "active"
+        return target
+
+
 class PublishedKnowledge:
     """API-side, version-aware index refresh. Checks the active publication at most every
     ``official_knowledge_refresh_check_s`` seconds, triggered lazily by chat traffic (no

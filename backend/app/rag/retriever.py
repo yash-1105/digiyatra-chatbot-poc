@@ -76,7 +76,23 @@ SYNONYMS: dict[str, str] = {
     "complaint": "customer care support contact email",
     "contact": "customer care email support",
     "email": "customercare email contact",
+    "announced": "announcement announce news update",
+    "announce": "announcement news update",
+    "recently": "latest announcement news update",
+    "recent": "latest announcement news update",
+    "latest": "recent announcement news update",
+    "news": "announcement update",
+    "follow": "official channel account social media",
+    "changed": "change lose mobile phone",
+    "consent": "consent permission",
 }
+DATED_KINDS = {"social_post", "government"}
+# Metadata-aware adjustments (cheap, deterministic): policies outrank promotional posts for
+# sensitive topics; dated official items help "latest" questions; channel cards answer "follow".
+SENSITIVE_Q = re.compile(r"privacy|personal data|biometric|retention|purge|delet|consent|stored|storage|security|"
+                         r"eligib|mandatory|fee|cost|charge")
+ANNOUNCE_Q = re.compile(r"announc|latest|recent|news|update|launched|new airport")
+FOLLOW_Q = re.compile(r"follow|official (?:channel|account|page|handle|social)|social media|youtube channel|twitter|\bx\b|linkedin")
 
 
 @dataclass
@@ -156,7 +172,7 @@ VIDEO_CONCEPTS = {
 def video_concepts(text: str) -> set[str]:
     terms = set(tokenize(text)) | set(re.findall(r"[a-z]+", text.lower()))
     found = {name for name, words in VIDEO_CONCEPTS.items() if terms & words}
-    if re.search(r"smart\s*share", text, re.I):
+    if re.search(r"smart\s*share|स्मार्ट\s*शेयर", text, re.I):
         found.add("smart_share")
     return found
 
@@ -267,6 +283,7 @@ class Retriever:
         q_terms = list(dict.fromkeys(tokenize(expanded)))
         q_core = set(tokenize(normalize_query(query))) - {"digi", "yatra"}
         intent = query_intent(query)
+        q_norm = normalize_query(query)
 
         # 1) keyword ranking over all approved chunks
         bm = self._bm25.scores(q_terms)
@@ -304,12 +321,19 @@ class Retriever:
             score = self.vector_weight * vs + (1 - self.vector_weight) * (0.5 * kw + 0.5 * coverage)
             relevance = intent_match(intent, c)
             score = min(1.0, score + 0.55 * relevance)
+            kind = c.get("source_kind")
+            if kind == "social_post" and SENSITIVE_Q.search(q_norm):
+                score *= 0.8
+            elif kind in ("social_post", "government") and ANNOUNCE_Q.search(q_norm):
+                score = min(1.0, score + 0.08)
+            if kind == "account_profile" and not FOLLOW_Q.search(q_norm):
+                score *= 0.5
             scored.append(
                 self._hit(c, score, vs, kw, coverage)
             )
         scored.sort(key=lambda r: ((intent_match(intent, {"text": r.text}) if intent in SCOPED_INTENTS else r.score),
                                    (r.score if intent in SCOPED_INTENTS else intent_match(intent, {"text": r.text})),
-                                   r.keyword_score, r.vector_score, r.chunk_id), reverse=True)
+                                   r.keyword_score, r.vector_score, r.as_of or "", r.chunk_id), reverse=True)
 
         if intent in SCOPED_INTENTS:
             scored = [r for r in scored if intent_match(intent, {"text": r.text})]
@@ -350,7 +374,13 @@ class Retriever:
             if r.score < self.min_score:
                 break
             feats = set(features(r.text))
-            if any(_jaccard(feats, s) > 0.6 for s in seen_feats):
+            dup = next((j for j, s in enumerate(seen_feats) if _jaccard(feats, s) > 0.6), None)
+            if dup is not None:
+                # Near-duplicate dated official items (e.g. an updated announcement): the newer one wins.
+                old = selected[dup]
+                if (r.extra.get("source_kind") in DATED_KINDS and old.extra.get("source_kind") in DATED_KINDS
+                        and (r.as_of or "") > (old.as_of or "")):
+                    selected[dup], seen_feats[dup] = r, feats
                 continue
             if per_source[r.source_file] >= self.max_per_source:
                 continue

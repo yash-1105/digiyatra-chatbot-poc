@@ -4,11 +4,21 @@
 # Contains the private approved corpus (knowledge/deploy): never commit, publish or upload it anywhere except
 # `railway up .cache/railway-context --path-as-root --no-gitignore ...` to the existing private service.
 # This script does NOT deploy anything.
+#   scripts/make_railway_context.sh          API service context (includes railway.toml)
+#   scripts/make_railway_context.sh --job    sync-job context WITHOUT railway.toml, so the API's start
+#                                            command/health check can never be applied to the cron service
 set -eu
 cd "$(dirname "$0")/.."
 umask 077
-OUT=.cache/railway-context
-INV=.cache/railway-context-inventory.json
+JOB=0
+[ "${1:-}" = "--job" ] && JOB=1
+if [ "$JOB" = 1 ]; then
+  OUT=.cache/railway-context-sync
+  INV=.cache/railway-context-sync-inventory.json
+else
+  OUT=.cache/railway-context
+  INV=.cache/railway-context-inventory.json
+fi
 PY=backend/.venv/bin/python
 
 # Refuse to package a corpus that fails its own integrity checks.
@@ -24,7 +34,8 @@ EOF
 
 rm -rf "$OUT"
 mkdir -p "$OUT/backend/scripts" "$OUT/knowledge"
-cp railway.toml .dockerignore "$OUT/"
+cp .dockerignore "$OUT/"
+[ "$JOB" = 1 ] || cp railway.toml "$OUT/"
 cp backend/Dockerfile backend/requirements.lock backend/alembic.ini "$OUT/backend/"
 cp backend/scripts/start.sh backend/scripts/sync.sh "$OUT/backend/scripts/"
 for d in migrations ingestion app; do cp -R "backend/$d" "$OUT/backend/$d"; done

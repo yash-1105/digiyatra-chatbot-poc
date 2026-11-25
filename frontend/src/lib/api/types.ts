@@ -61,6 +61,11 @@ export interface ChatResponse {
   status: AnswerStatus;
   /** Safety / freshness notices to show with the answer (e.g. "don't share OTPs"). */
   notices: string[];
+  /** True when the question contained personal data; persist `redactedMessage`, never the typed text. */
+  piiRedacted?: boolean;
+  redactedMessage?: string;
+  /** Provider that produced this answer (attribution kept in local history). */
+  provider?: AIProvider;
 }
 
 export interface FeedbackRequest {
@@ -73,6 +78,8 @@ export interface ChatClient {
   readonly mode: "mock" | "api";
   sendMessage(request: ChatRequest, signal?: AbortSignal): Promise<ChatResponse>;
   sendFeedback(feedback: FeedbackRequest): Promise<void>;
+  /** Ask the server to drop its short-lived context for a cleared conversation (best effort). */
+  forget(conversationId: string): Promise<void>;
 }
 
 export type ChatErrorKind = "network" | "timeout" | "server" | "rate_limited" | "bad_request" | "aborted";

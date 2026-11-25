@@ -25,6 +25,9 @@ interface WireChatResponse {
   sources?: unknown;
   status?: unknown;
   notices?: unknown;
+  pii_redacted?: unknown;
+  redacted_message?: unknown;
+  provider?: unknown;
 }
 
 const STATUSES: AnswerStatus[] = ["answered", "insufficient_evidence", "out_of_scope", "refused", "greeting", "live_status"];
@@ -131,7 +134,18 @@ export class HttpChatClient implements ChatClient {
       origin: "live",
       status: STATUSES.includes(data.status as AnswerStatus) ? (data.status as AnswerStatus) : "answered",
       notices: Array.isArray(data.notices) ? data.notices.filter((n): n is string => typeof n === "string") : [],
+      piiRedacted: data.pii_redacted === true,
+      redactedMessage: typeof data.redacted_message === "string" ? data.redacted_message.slice(0, 1000) : undefined,
+      provider: data.provider === "sarvam" || data.provider === "anthropic" || data.provider === "novita" ? data.provider : undefined,
     };
+  }
+
+  async forget(conversationId: string): Promise<void> {
+    try {
+      await this.post("/api/v1/chat/forget", { conversation_id: conversationId });
+    } catch {
+      /* best effort: server context also expires on its own */
+    }
   }
 
   async sendFeedback(feedback: FeedbackRequest): Promise<void> {

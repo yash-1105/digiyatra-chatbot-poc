@@ -7,6 +7,7 @@ const labels = {
   en: {
     title: "Digi Yatra Assistant", approved: "Answers from approved sources", clear: "Clear conversation", close: "Close assistant",
     clearQuestion: "Clear this conversation?", clearButton: "Clear", cancel: "Cancel", conversation: "Conversation",
+    historyNote: "This conversation is saved only on this browser for 7 days (personal details are not saved). Use the clear button on shared devices.",
     welcome: "Namaste! Welcome to Digi Yatra.", greeting: "I can help with registration, boarding passes, the airport journey, privacy and troubleshooting. Please don’t share personal details such as Aadhaar numbers.",
     suggestions: "Suggested questions", input: "Type your question", placeholder: "Ask about Digi Yatra…", send: "Send message",
     hint: "Enter to send · Shift+Enter for a new line", remaining: "characters left", typing: "The assistant is typing…",
@@ -26,6 +27,7 @@ const labels = {
   hi: {
     title: "डिजी यात्रा सहायक", approved: "स्वीकृत स्रोतों पर आधारित जवाब", clear: "बातचीत मिटाएँ", close: "सहायक बंद करें",
     clearQuestion: "यह बातचीत मिटाएँ?", clearButton: "मिटाएँ", cancel: "रद्द करें", conversation: "बातचीत",
+    historyNote: "यह बातचीत केवल इसी ब्राउज़र में 7 दिनों के लिए सहेजी जाती है (व्यक्तिगत विवरण सहेजे नहीं जाते)। साझा डिवाइस पर मिटाएँ बटन का उपयोग करें।",
     welcome: "नमस्ते! डिजी यात्रा में आपका स्वागत है।", greeting: "पंजीकरण, बोर्डिंग पास, एयरपोर्ट की प्रक्रिया, गोपनीयता और ऐप की समस्याओं में मदद के लिए पूछें। कृपया आधार नंबर जैसी निजी जानकारी साझा न करें।",
     suggestions: "आप ये सवाल पूछ सकते हैं", input: "अपना सवाल लिखें", placeholder: "डिजी यात्रा के बारे में पूछें…", send: "संदेश भेजें",
     hint: "भेजने के लिए Enter · नई पंक्ति के लिए Shift+Enter", remaining: "अक्षर बाकी", typing: "सहायक जवाब लिख रहा है…",

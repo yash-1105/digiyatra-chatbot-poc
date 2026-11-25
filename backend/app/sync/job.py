@@ -42,6 +42,17 @@ log = logging.getLogger(__name__)
 INDIA = ZoneInfo("Asia/Kolkata")
 LEASE = "official-knowledge-sync"
 ACTIVE = ("verified", "pending_review", "conflict", "historical")
+# Knowledge-gap topic -> registered sources refreshed early (never new or arbitrary URLs).
+GAP_SOURCES = {
+    "international_trial": ("dyf-international-trial", "pib-2331200", "moca-search-en"),
+    "international_scope": ("dyf-international-trial", "pib-2331200"),
+    "epassport_scope": ("dyf-international-trial", "pib-2331200"),
+    "domestic_airport_coverage": ("dyf-airports-current", "moca-search-en"),
+    "airport_catalog": ("dyf-airports-current", "moca-search-en"),
+    "airport_planned": ("dyf-airports-current", "moca-search-en", "pib-rss"),
+    "registration": ("moca-digital-initiatives", "yt-channel-digiyatrafoundation"),
+    "other_digi_yatra": ("moca-search-en", "pib-rss"),
+}
 _PROVENANCE = {"topic", "risk", "historical_after_days", "organization", "authority", "source_kind", "platform",
                "external_id", "account_id", "account_name", "start_s"}
 # Railway list prices (docs.railway.com/reference/pricing/plans, checked 2026-11-25).
@@ -131,6 +142,8 @@ class RunStats:
     stripped_statistics: int = 0
     duplicates: int = 0
     social_posts_seen: int = 0
+    gap_topics: list = field(default_factory=list)
+    gap_sources_prioritised: list = field(default_factory=list)
     videos_seen: int = 0
     failures: dict = field(default_factory=dict)
     publication: dict = field(default_factory=dict)
@@ -233,7 +246,28 @@ class SyncJob:
             raise ValueError(f"Unknown or disabled source(s): {', '.join(sorted(unknown))}")
         return ids
 
+    def _prioritise_gaps(self) -> None:
+        """Knowledge-gap topics (aggregate slugs recorded by chat, no text) seen since the last successful
+        run make their mapped, allow-listed sources due now. Chat never triggers a fetch itself."""
+        from app.db.models import KnowledgeGap
+
+        with self.db.session() as s:
+            last_ok = s.scalar(select(func.max(SyncRun.finished_at)).where(SyncRun.status.in_(("ok", "partial"))))
+            q = select(KnowledgeGap.topic)
+            if last_ok:
+                q = q.where(KnowledgeGap.last_seen > last_ok)
+            topics = set(s.scalars(q))
+            targets = {sid for t in topics for sid in GAP_SOURCES.get(t, ())}
+            if targets:
+                s.execute(update(OfficialSource).where(OfficialSource.source_id.in_(targets),
+                                                       OfficialSource.enabled.is_(True))
+                          .values(next_due_at=utcnow()))
+        self.stats.gap_topics = sorted(topics)
+        self.stats.gap_sources_prioritised = sorted(targets)
+
     def _process_due(self, fetcher: SecureFetcher, force: list[str] | None) -> None:
+        if not force:
+            self._prioritise_gaps()
         queue = self._due(force)
         self.stats.sources_due = len(queue)
         seen: set[str] = set()
@@ -650,8 +684,29 @@ def status_report(db: Database, settings) -> dict:
         last_ok = s.scalar(select(func.max(SyncRun.finished_at)).where(SyncRun.status.in_(("ok", "partial"))))
         runs = list(s.scalars(select(SyncRun).order_by(SyncRun.id.desc()).limit(5)))
         pub = s.scalar(select(KnowledgePublication).where(KnowledgePublication.status == "active"))
+    today = datetime.now(INDIA).date().isoformat()
+    with db.session() as s:
+        rows = s.execute(select(OfficialRecord.record_type, OfficialRecord.source_kind, OfficialRecord.authority,
+                                OfficialRecord.status, OfficialRecord.expires_on)).all()
+    def bucket(rt, kind, authority):
+        if kind:
+            return {"account_profile": "official_channels"}.get(kind, kind + "s" if not kind.endswith("s") else kind)
+        if rt == "faq":
+            return "website_faqs"
+        return "government_documents" if authority in ("official_government", "official_press") else "website_sections"
+    knowledge: dict[str, dict[str, int]] = {}
+    expired = 0
+    for rt, kind, authority, st, exp in rows:
+        b = knowledge.setdefault(bucket(rt, kind, authority), {})
+        b[st] = b.get(st, 0) + 1
+        if st == "verified" and exp and exp < today:
+            expired += 1
     return {
         "generated_at": now.isoformat(timespec="seconds") + "Z",
+        "knowledge_counts": knowledge,
+        "verified_total": sum(v.get("verified", 0) for v in knowledge.values()),
+        "verified_but_expired": expired,
+        "pending_review_total": sum(v.get("pending_review", 0) + v.get("conflict", 0) for v in knowledge.values()),
         "last_successful_sync": last_ok.isoformat(timespec="seconds") + "Z" if last_ok else None,
         "active_publication": {"id": pub.id, "records": pub.record_count, "created_at": pub.created_at.isoformat(timespec="seconds") + "Z",
                                "digest": pub.digest[:16]} if pub else None,

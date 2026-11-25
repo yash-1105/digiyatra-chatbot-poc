@@ -71,7 +71,8 @@ DOMAIN_TERMS = re.compile(
     r"(?i)\b(digi ?yatra|dyce|dyf|airport|e-?gates?|boarding|flight|travel|passenger|aadhaar|aadhar|digilocker|selfie|"
     r"face|biometric|credential|wallet|app|otp|enrol|enroll|register|registration|privacy|data|consent|security|"
     r"check|terminal|airline|minor|child|infant|kid|verify|verification|upload|uninstall|delete|support|customer care|"
-    r"contact|complaint|vc|did|ssi|domestic|international|passport|turban|phone|mobile|login|error)\b"
+    r"contact|complaint|vc|did|ssi|domestic|international|passport|turban|phone|mobile|login|error|"
+    r"smart ?share|dy-?ipt|nfc|e-?passport)\b"
 )
 
 
