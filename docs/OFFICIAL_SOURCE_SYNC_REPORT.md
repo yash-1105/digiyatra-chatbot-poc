@@ -201,3 +201,19 @@ At Railway's list prices ($20 per vCPU-month, $10 per GB-month), checked 2026-11
 ## 12. Git status
 
 The implementation commit `9478fe7` is on the feature branch `feature/official-source-sync`, pushed to `yash-1105/digiyatra-chatbot-poc` after a successful dry run and the local pre-push check. It has not been merged to `main` and has not been deployed. The staged set was audited: no `knowledge/`, `.cache/`, `.tools/`, index, database, `.env` or credential files.
+
+## 13. Follow-up before Task 2 (2026-11-25)
+
+- **Statistics filter keeps facts:** a sentence removed for usage, download, journey or traffic statistics now keeps its coverage facts. Counts of airports, terminals, airlines and languages are restated with the source's own number in a fixed form, for example "Reported Digi Yatra coverage: 39 domestic airports, serving domestic airlines." English and Hindi are both handled, and the record is flagged for the reviewer. The filter now also catches plural and hyphenated forms ("50 crores", "10-crore usage") and statistics where the keyword comes before the number, and it removes punctuation left behind by removed quotes. Regression tests cover all of these.
+- **Review lifecycle fixes:** revoking an approval returns the record to the review queue; previously it rejected the record. Only one unreviewed version per record is ever queued.
+- **Consolidated review pack** (`sync-review-report`, private, written to `.cache/review/`, mode 0600):
+  - 118 pending records fall into **9 groups**: seven 10-page windows of the guidelines PDF, the May 2026 PIB release and the trial release. Previously this meant 118 individual decisions.
+  - Each group lists deterministic factual claims, a passenger-relevance label, low-relevance records as suggestions only, flags (OCR, removed statistics, operator capture) and numeric conflicts. Conflicts are checked against the approved corpus, the reviewed supplements and verified official records: airport counts, retention hours, language counts and child ages.
+  - `sync-review-apply` applies a decision sheet group by group, with optional per-record `reject_ids` / `defer_ids`. Every group defaults to `defer`, and records changed since the pack was generated are skipped. Nothing is approved automatically.
+- **Manual import of the blocked Foundation pages:** see `docs/MANUAL_IMPORT_FOUNDATION.md`.
+  - Several saved files per page are accepted (one per FAQ tab). Unlisted Foundation pages are registered through `--url` only if they pass the sitemap path rules.
+  - Embedded canonical, og:url and "saved from" URLs must match the page.
+  - Partial captures are rejected, captures never withdraw records, records are always `pending_review`, and a rejected capture never marks the automated source as failed.
+- **Transfer to production:** `sync-export` / `sync-import-bundle` move knowledge as an insert-only, SHA-256-verified bundle (`DEPLOYMENT_HANDOFF.md` §17). Production rows are never updated or deleted, conflicting production versions win, and re-imports are idempotent.
+- **PostgreSQL integration tests** (`tests/unit/test_official_sync_postgres.py`) cover migration round-trips, concurrent leases, the single-active-publication index, concurrent publication under `LOCK TABLE` and row-locked review. They **passed** against a project-local, socket-only PostgreSQL 16.2 (`scripts/pg_test_server.sh`), together with the sync, admin, analytics, API and enrichment suites: 132 passed. `tests/conftest.py` now refuses any non-local `DY_TEST_PG_URL`.
+- **Unchanged:** the original 37 private sources, the manifest, the 119-chunk corpus and the reviewed PIB/DigiLocker supplements; a test asserts that sync never modifies them. Production scheduling stays disabled, the cron service is not provisioned, and the Railway configuration migration remains a separate open deployment-readiness item.

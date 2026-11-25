@@ -27,7 +27,7 @@ import json
 import sys
 from collections.abc import Callable
 
-from app.config import get_settings
+from app.config import PROJECT_DIR, get_settings
 from app.logging_config import configure_logging
 from app.rag.factory import (
     build_retriever,
@@ -200,11 +200,41 @@ def cmd_sync(settings, args) -> int:
             J.set_enabled(db, args.source_id, args.cmd == "sync-enable")
             print(f"{args.source_id}: {'enabled' if args.cmd == 'sync-enable' else 'disabled'}")
         elif args.cmd == "sync-import":
-            path = Path(args.file)
-            if path.stat().st_size > settings.sync_max_pdf_bytes:
-                raise ValueError("Capture is too large")
-            J.SyncJob(settings, db).import_capture(args.source_id, path.read_bytes())
-            print("Capture stored; resulting records require review (sync-pending).")
+            blobs = []
+            for name in args.file:
+                path = Path(name)
+                if not path.is_file() or path.stat().st_size > settings.sync_max_pdf_bytes:
+                    raise ValueError(f"Capture missing or too large: {path.name}")
+                blobs.append(path.read_bytes())
+            result = J.SyncJob(settings, db).import_capture(args.source_id, blobs, url=args.url)
+            print(json.dumps(result, indent=2))
+            print("Capture stored; every resulting record requires review (sync-pending / sync-review-report).")
+        elif args.cmd == "sync-export":
+            from app.sync.transfer import export_bundle
+
+            print(json.dumps(export_bundle(db, Path(args.out)), indent=2))
+        elif args.cmd == "sync-import-bundle":
+            from app.sync.transfer import import_bundle
+
+            print(json.dumps(import_bundle(db, Path(args.bundle), dry_run=args.dry_run, as_pending=args.as_pending), indent=2))
+            if not args.dry_run:
+                print("Insert-only import done. Review with sync-review-report, then run sync-publish.")
+        elif args.cmd == "sync-review-report":
+            from app.sync.review import build_groups, write_report
+
+            groups = build_groups(db, settings.knowledge_corpus_dir)
+            md, sheet = write_report(groups, Path(args.out))
+            print(f"{sum(len(g['record_ids']) for g in groups)} pending records in {len(groups)} groups")
+            print(f"Report (private): {md}\nDecision sheet: {sheet}")
+        elif args.cmd == "sync-review-apply":
+            import re as _re
+
+            from app.sync.review import apply_sheet
+
+            if not _re.fullmatch(r"[\w .@-]{1,80}", args.reviewer):
+                raise ValueError("Invalid reviewer name")
+            print(json.dumps(apply_sheet(db, Path(args.sheet), args.reviewer), indent=2))
+            print("Run `sync-publish` to publish the verified set.")
         elif args.cmd == "sync-review":
             if args.record.startswith("source:"):
                 n = J.review_source(db, args.record[7:], args.decision, args.reviewer)
@@ -266,8 +296,21 @@ def main(argv: list[str] | None = None) -> None:
     for name in ("sync-enable", "sync-disable"):
         sub.add_parser(name).add_argument("source_id")
     si = sub.add_parser("sync-import")
-    si.add_argument("source_id")
-    si.add_argument("--file", required=True, help="Operator-saved HTML/PDF of a registered official page")
+    si.add_argument("source_id", nargs="?", help="Registered source ID (or use --url)")
+    si.add_argument("--url", help="Allow-listed Digi Yatra Foundation page URL (registered on first import)")
+    si.add_argument("--file", action="append", required=True,
+                    help="Operator-saved HTML (preferred) or PDF of the page; repeat for one file per FAQ tab")
+    ex = sub.add_parser("sync-export")
+    ex.add_argument("--out", required=True, help="Private bundle path (e.g. ../.cache/exports/official.json)")
+    ib = sub.add_parser("sync-import-bundle")
+    ib.add_argument("bundle")
+    ib.add_argument("--dry-run", action="store_true")
+    ib.add_argument("--as-pending", action="store_true", help="Re-queue every imported record for review")
+    rr = sub.add_parser("sync-review-report")
+    rr.add_argument("--out", default=str(PROJECT_DIR / ".cache" / "review"), help="Private output directory")
+    ra = sub.add_parser("sync-review-apply")
+    ra.add_argument("sheet")
+    ra.add_argument("--reviewer", required=True)
     sv = sub.add_parser("sync-review")
     sv.add_argument("record", help="Record id, or source:<SOURCE_ID> for every pending record of a source")
     sv.add_argument("decision", choices=("verified", "rejected", "revoked"))

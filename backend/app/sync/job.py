@@ -249,34 +249,40 @@ class SyncJob:
             new_children = self._process(fetcher, row)
             queue.extend(c for c in new_children if c not in seen)
 
-    def _process(self, fetcher: SecureFetcher, row: OfficialSource, capture: tuple[bytes, str] | None = None) -> list[str]:
+    def _process(self, fetcher: SecureFetcher, row: OfficialSource) -> list[str]:
         spec = spec_for(row)
         try:
             if spec.source_type.startswith("discovery_"):
                 return self._discover(fetcher, row, spec)
             kind = "pdf" if spec.source_type == "pdf" else "html"
-            if capture is None:
-                res = fetcher.get(row.canonical_url, kind, etag=row.etag, last_modified=row.last_modified)
-                if res.not_modified:
-                    self._unchanged(row, 304, res.etag, res.last_modified)
-                    return []
-                body, etag, modified = res.body, res.etag, res.last_modified
-            else:
-                body, etag, modified = capture[0], None, None
-            digest = hashlib.sha256(body).hexdigest()
-            if digest == row.content_hash and capture is None:
-                self._unchanged(row, 200, etag, modified)
+            res = fetcher.get(row.canonical_url, kind, etag=row.etag, last_modified=row.last_modified)
+            if res.not_modified:
+                self._unchanged(row, 304, res.etag, res.last_modified)
                 return []
-            ex = self._extract(spec, kind, body)
-            assessment = P.assess(row.source_id, spec, ex, row.canonical_url)
-            self.stats.stripped_statistics += assessment.stripped_statistics
-            if not assessment.complete:
-                raise FetchError(assessment.reason or "incomplete_extraction", 200)
-            self._persist(row, spec, assessment.candidates, digest, etag, modified, operator_capture=capture is not None)
+            digest = hashlib.sha256(res.body).hexdigest()
+            if digest == row.content_hash:
+                self._unchanged(row, 200, res.etag, res.last_modified)
+                return []
+            self._ingest(row, spec, kind, [res.body], digest, res.etag, res.last_modified)
             return []
         except FetchError as exc:
             self._failed(row, exc)
             return []
+
+    def _ingest(self, row: OfficialSource, spec: SourceSpec, kind: str, bodies: list[bytes], digest: str,
+                etag=None, modified=None, *, capture_flags: list[str] | None = None) -> None:
+        """Extract -> validate -> persist. Several bodies (operator captures of one page, e.g. one file
+        per FAQ tab) are merged into one extraction before validation."""
+        ex = X.merge([self._extract(spec, kind, b) for b in bodies])
+        assessment = P.assess(row.source_id, spec, ex, row.canonical_url)
+        self.stats.stripped_statistics += assessment.stripped_statistics
+        if not assessment.complete:
+            raise FetchError(assessment.reason or "incomplete_extraction", 200)
+        if capture_flags is not None:
+            for c in assessment.candidates:
+                c.flags.extend(capture_flags)
+        self._persist(row, spec, assessment.candidates, digest, etag, modified,
+                      operator_capture=capture_flags is not None)
 
     def _extract(self, spec: SourceSpec, kind: str, body: bytes) -> X.Extraction:
         if kind == "pdf":
@@ -441,10 +447,17 @@ class SyncJob:
                                                        {"airport_coverage", "announcements", "international_trial"} else [])
                     if operator_capture:
                         reason = "operator capture: " + (reason or "requires review")
+                if c.flags:
+                    reason = "; ".join([reason or "", *c.flags]).strip("; ")[:300]
                 if spec.source_type == "pdf" and "Vatra" in c.body:
                     reason = ((reason or "") + "; OCR text layer with recognition errors").strip("; ")
                 if status in ("pending_review", "conflict"):
                     self.stats.pending_review += 1
+                # Only one unreviewed version per record is ever queued.
+                s.execute(update(OfficialRecord).where(OfficialRecord.source_id == src.source_id,
+                                                       OfficialRecord.record_key == c.record_key,
+                                                       OfficialRecord.status.in_(("pending_review", "conflict")))
+                          .values(status="superseded"))
                 s.add(OfficialRecord(
                     source_id=src.source_id, record_key=c.record_key, version=(prev.version + 1) if prev else 1,
                     content_hash=c.content_hash, status=status, record_type=c.record_type, title=c.title[:300],
@@ -459,12 +472,16 @@ class SyncJob:
                     self.stats.new_records += 1
                 else:
                     self.stats.updated_records += 1
+                    # A verified version stays served (last-known-good) until its replacement is
+                    # reviewed; an older unreviewed version is simply replaced in the queue.
                     if status == "verified":
                         prev.status = "superseded"
             # Withdrawn content: only when the new extraction is complete and not suspiciously small.
             active_keys = {k for k, r in latest.items() if r.status in ("verified", "pending_review", "conflict")}
             missing = active_keys - seen_keys
-            if missing and len(seen_keys & active_keys) >= 0.5 * len(active_keys):
+            if missing and operator_capture:
+                pass  # a capture may cover part of a page (one tab); it never withdraws records
+            elif missing and len(seen_keys & active_keys) >= 0.5 * len(active_keys):
                 for key in missing:
                     s.execute(update(OfficialRecord).where(OfficialRecord.source_id == src.source_id,
                                                            OfficialRecord.record_key == key,
@@ -486,25 +503,56 @@ class SyncJob:
             src.next_due_at = now + timedelta(days=src.refresh_days)
 
     # ------------------------------------------------------------------ manual import / review
-    def import_capture(self, source_id: str, data: bytes) -> None:
-        """Operator-supplied HTML/PDF for a REGISTERED source blocked to automated access.
-        Never auto-verified; every resulting record requires human review."""
+    def import_capture(self, source_id: str | None, files: list[bytes], url: str | None = None) -> dict:
+        """Operator-saved HTML/PDF of an official page that blocks automated access.
+
+        * ``source_id`` must be registered, or ``url`` must be an allow-listed Foundation page that
+          passes the Foundation sitemap discovery rules (it is then registered as a child source).
+        * A URL embedded in the saved file (canonical / og:url / "saved from") must match the page.
+        * Never auto-verified and never withdraws records: every record requires human review.
+        """
         sync_registry(self.db, self.s)
-        with self.db.session() as s:
-            row = s.get(OfficialSource, source_id)
+        if url:
+            spec = SOURCES["dyf-sitemap"]
+            canon = accept_child(spec, url)
+            if not canon:
+                raise ValueError("URL is not an allow-listed official page eligible for manual import")
+            with self.db.session() as s:
+                existing = s.scalar(select(OfficialSource.source_id).where(OfficialSource.canonical_url == canon))
+            source_id = existing or self._register_children(self._row("dyf-sitemap"), spec, [canon])[0]
+        if not source_id:
+            raise ValueError("A registered source ID or an eligible URL is required")
+        row = self._row(source_id)
         if row is None:
             raise ValueError("Unknown source")
         if row.source_type.startswith("discovery_"):
             raise ValueError("Captures are accepted for content sources only")
+        if not files:
+            raise ValueError("No capture files supplied")
+        flags = []
+        for data in files:
+            flags.append(P.capture_provenance(data, row.canonical_url))
         token = acquire_lease(self.db, self.s.sync_lock_ttl_s)
         if token is None:
             raise RuntimeError("A synchronisation is running")
         try:
-            self._process(None, row, capture=(data, row.source_type))  # type: ignore[arg-type]
-            if self.stats.failed_sources:
-                raise ValueError(f"Capture rejected: {', '.join(self.stats.failures)}")
+            kind = "pdf" if files[0].startswith(b"%PDF-") else "html"
+            if any(f.startswith(b"%PDF-") != (kind == "pdf") for f in files):
+                raise ValueError("Do not mix PDF and HTML captures of one page")
+            digest = hashlib.sha256(b"".join(hashlib.sha256(f).digest() for f in files)).hexdigest()
+            try:
+                self._ingest(row, spec_for(row), kind, files, digest,
+                             capture_flags=["operator capture: " + "; ".join(sorted(set(flags)))])
+            except FetchError as exc:
+                raise ValueError(f"Capture rejected: {exc.reason}") from exc
+            return {"source_id": row.source_id, "url": row.canonical_url, "new_records": self.stats.new_records,
+                    "updated_records": self.stats.updated_records, "provenance": sorted(set(flags))}
         finally:
             release_lease(self.db, token)
+
+    def _row(self, source_id: str) -> OfficialSource | None:
+        with self.db.session() as s:
+            return s.get(OfficialSource, source_id)
 
     def _validate_index(self, records) -> None:
         from ingestion.corpus import load_corpus
@@ -533,6 +581,7 @@ def review_record(db: Database, record_id: int, decision: str, reviewer: str) ->
         raise ValueError("Invalid review decision")
     with db.session() as s:
         rec = s.get(OfficialRecord, record_id, with_for_update=True)
+        # "revoked" withdraws an approval: the record stops being served and returns to the review queue.
         allowed = {("pending_review", "verified"), ("conflict", "verified"), ("pending_review", "rejected"),
                    ("conflict", "rejected"), ("verified", "revoked"), ("historical", "rejected")}
         if rec is None or (rec.status, decision) not in allowed:
@@ -542,7 +591,10 @@ def review_record(db: Database, record_id: int, decision: str, reviewer: str) ->
                                                    OfficialRecord.record_key == rec.record_key,
                                                    OfficialRecord.status == "verified",
                                                    OfficialRecord.id != rec.id).values(status="superseded"))
-        rec.status = "rejected" if decision == "revoked" else decision
+        if decision == "revoked":
+            rec.status, rec.review_reason = "pending_review", ((rec.review_reason or "") + f"; approval revoked by {reviewer}")[-300:]
+        else:
+            rec.status = decision
         rec.reviewer, rec.reviewed_at = reviewer, utcnow()
 
 

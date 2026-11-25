@@ -18,6 +18,8 @@ knowledge/curated/
 # Retrieval approval does not grant public redistribution rights.
 knowledge/deploy/
 knowledge/approval_manifest.json
+# Operator-saved captures of official pages (manual import of blocked sources) — private working files.
+knowledge/imports/
 docs/live_eval_report.md
 docs/KNOWLEDGE_INVENTORY.md
 design/dgca-reference.png

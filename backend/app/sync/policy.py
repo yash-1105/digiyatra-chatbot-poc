@@ -19,9 +19,12 @@ MIN_SECTION_CHARS = 60
 MAX_RECORD_CHARS = 6000
 
 # CLAUDE.md: download / journey / usage statistics are never presented as current fact.
+_BIG = r"\b\d[\d.,]*\s*(?:\+\s*)?-?\s*(?:crores?|lakhs?|millions?|billions?|mn|cr)\b"
+_USAGE = r"\b(?:users?|usages?|journeys?|downloads?|onboard|passengers?|registrations?|travellers?|traffic|milestone)\b"
+_S = r"[^.!?।\n]*"
 USAGE_STAT = re.compile(
-    r"[^.!?।\n]*\b\d[\d.,]*\s*(?:\+\s*)?(?:crore|lakh|million|billion|mn|cr)\b[^.!?।\n]*"
-    r"\b(?:users?|usages?|journeys?|downloads?|onboard|passengers|registrations?|travellers?)\b[^.!?।\n]*[.!?।]?"
+    rf"{_S}{_BIG}{_S}{_USAGE}{_S}[.!?।]?[\"”’']?"          # "… 26.5 million users …"
+    rf"|{_S}{_USAGE}{_S}{_BIG}{_S}[.!?।]?[\"”’']?"          # "… passenger traffic … 50 crores …"
     r"|[^.!?।\n]*\d[\d.,]*\s*(?:करोड़|लाख)[^.!?।\n]*(?:यात्रा|उपयोग|डाउनलोड|उपयोगकर्ता|यात्री)[^.!?।\n]*[.!?।]?",
     re.I,
 )
@@ -79,15 +82,46 @@ def normalise_text(text: str) -> str:
     return re.sub(r"[ \t]+", " ", "\n".join(out)).strip()
 
 
+# Facts that must survive when a sentence is removed for usage statistics: coverage counts of
+# airports / terminals / airlines / languages, with the source's own number and qualifier.
+PROTECTED_FACT = re.compile(
+    r"\b(\d{1,3})\s+((?:domestic|international|major|additional|more|participating|operational)\s+)?"
+    r"(airports?|terminals?|airlines?|languages?)\b"
+    r"(\s*,?\s*serving\s+(?:domestic|international)\s+airlines)?",
+    re.I,
+)
+PROTECTED_FACT_HI = re.compile(r"(\d{1,3})\s+(घरेलू\s+|अंतरराष्ट्रीय\s+)?(हवाई\s+अड्डों|हवाई\s+अड्डे|एयरलाइनों|भाषाओं)")
+RETAINED_PREFIX = "Reported Digi Yatra coverage"
+
+
+def retained_facts(sentence: str) -> list[str]:
+    """Deterministic, number-preserving restatement of coverage facts found in a removed sentence.
+    Wording is fixed; only the source's own number/qualifier/noun are reused (no inference)."""
+    facts = []
+    for m in PROTECTED_FACT.finditer(sentence):
+        phrase = " ".join(x.strip() for x in (m.group(1), m.group(2) or "", m.group(3)) if x and x.strip())
+        if m.group(4):
+            phrase += ", " + m.group(4).strip(" ,")
+        facts.append(f"{RETAINED_PREFIX}: {phrase}.")
+    for m in PROTECTED_FACT_HI.finditer(sentence):
+        phrase = " ".join(x.strip() for x in m.groups() if x and x.strip())
+        facts.append(f"डिजी यात्रा का रिपोर्ट किया गया कवरेज: {phrase}।")
+    return list(dict.fromkeys(facts))
+
+
 def strip_statistics(text: str) -> tuple[str, int]:
+    """Remove usage/download/journey statistics (never presented as current fact) while keeping
+    relevant coverage facts from the same sentence (e.g. '39 domestic airports')."""
     count = 0
 
-    def repl(_m):
+    def repl(m):
         nonlocal count
         count += 1
-        return ""
+        kept = retained_facts(m.group(0))
+        return (" " + " ".join(kept)) if kept else ""
 
     cleaned = USAGE_STAT.sub(repl, text)
+    cleaned = re.sub(r"(^|\n)[\s\"“”'’,;:]+(?=\S)", r"\1", cleaned)  # punctuation left by a removed quote
     return re.sub(r"\n{2,}", "\n", re.sub(r"[ \t]{2,}", " ", cleaned)).strip(), count
 
 
@@ -178,6 +212,9 @@ def assess(source_id: str, spec, ex: Extraction, url: str) -> Assessment:
                 candidates.append(Candidate(key_for(source_id, "section", label), "section", ex.title or spec.organization,
                                             s.heading or None, None, part, s.anchor, ex.language,
                                             ex.published_on, ex.updated_on, effective, expires))
+    for c in candidates:
+        if RETAINED_PREFIX in c.body or "रिपोर्ट किया गया कवरेज" in c.body:
+            c.flags.append("coverage fact restated from a sentence whose usage statistics were removed")
     if not candidates:
         return Assessment([], False, "no_relevant_content", stripped_statistics=stripped)
     relevant = DIGI_YATRA.search(page_text) is not None
@@ -217,3 +254,23 @@ def detect_conflicts(cand: Candidate, verified_counts: dict[int, str | None]) ->
         if others:
             out.append(f"airport count {n} differs from verified {sorted(others)}")
     return out
+
+
+def capture_provenance(data: bytes, target_url: str) -> str:
+    """Check URLs embedded in an operator capture against the page it claims to be.
+    Raises on a mismatch; returns a provenance note for the reviewer otherwise."""
+    from app.sync.extract import embedded_urls
+    from app.sync.sources import canonical_url
+
+    def norm(u):
+        c = canonical_url(u) or ""
+        return c.rstrip("/")
+
+    if data.startswith(b"%PDF-"):
+        return "pdf capture (no embedded page URL check)"
+    found = [u for u in embedded_urls(data.decode("utf-8", "replace")) if u.startswith(("http://", "https://"))]
+    if not found:
+        return "no embedded page URL (provenance attested by the operator only)"
+    if any(norm(u) != norm(target_url) for u in found):
+        raise ValueError("Capture rejected: embedded page URL does not match the target official page")
+    return "embedded page URL matches the official page"

@@ -349,6 +349,24 @@ Full design, inventory and measurements: `docs/OFFICIAL_SOURCE_SYNC_REPORT.md`.
 - **Proposed Railway cron service (NOT provisioned):** same private build context and image as the backend. Start command `./scripts/sync.sh`. Cron schedule `30 21 * * 6`. Restart policy `NEVER`. No public domain, no volume, 1 replica. Variables: `DATABASE_URL` referencing the existing Postgres service, `OFFICIAL_SOURCE_LOOKUP_ENABLED=true`, `ENVIRONMENT=production`. No LLM keys are needed. `KNOWLEDGE_AUTO_PUBLISH_ENABLED` stays `false` unless explicitly approved.
 - **Operator commands** (Railway shell or a laptop with the production `DATABASE_URL`): `sync-status`, `sync-pending`, `sync-review RECORD|source:ID verified|rejected|revoked --reviewer NAME`, `sync-publish`, `sync-enable|sync-disable ID`, `sync-import ID --file CAPTURE` (blocked sources; always requires review), `sync-run --source ID` (manual refresh).
 - **Content approval:** new or changed consequential records (`risk=high`) stay `pending_review` until a named reviewer verifies them. Content-owner sign-off of the original manifest remains pending.
+- **Moving reviewed knowledge to production.** Deploying code does **not** copy any local database. Use the insert-only bundle:
+  1. Locally (Hostinger dev DB): `python -m app.cli sync-export --out ../.cache/exports/official-<date>.json`. The file is mode 0600 and holds public official text plus review metadata only: no chat, analytics, users or keys.
+  2. Copy it to the laptop with SFTP. After the code with migration 0005 is deployed, point `DATABASE_URL` at production (as for `create-admin`, §9 Option B) and run `python -m app.cli sync-import-bundle <file> --dry-run`, then run it again without `--dry-run`.
+  3. The import verifies the SHA-256 digest and **only inserts**. Existing production sources, schedules, records, reviews and publications are never updated or deleted. Identical records are skipped. A record whose production version is already verified with different text is imported as `pending_review`. `--as-pending` re-queues everything for production review.
+  4. Run `python -m app.cli sync-review-report` against production if anything is pending, then `python -m app.cli sync-publish`, which validates the index build before activation. API instances pick up the new publication within `OFFICIAL_KNOWLEDGE_REFRESH_CHECK_S`.
+- **Blocked Foundation pages:** see `docs/MANUAL_IMPORT_FOUNDATION.md`.
+- **PostgreSQL integration tests:** `scripts/pg_test_server.sh start`, then `DY_TEST_PG_URL="$(scripts/pg_test_server.sh url)" .venv/bin/python -m pytest tests/unit/test_official_sync_postgres.py …`, then `scripts/pg_test_server.sh stop`. `tests/conftest.py` refuses any non-local `DY_TEST_PG_URL`.
+
+### Deployment-readiness checklist (separate items; none done from Hostinger)
+
+| Item | Status |
+|---|---|
+| Railway Config-as-Code → IaC migration before 2026-12-01 (§18) | **Open**: needs the authenticated Railway CLI on the laptop |
+| Backend deploy with migration 0005 | Not deployed |
+| `OFFICIAL_KNOWLEDGE_SERVING_ENABLED` in production | Off |
+| Railway cron service `30 21 * * 6` | Designed, **not provisioned**; production scheduling disabled |
+| Knowledge transfer bundle import | Not run; requires the deploy first |
+| Docker image build verification | Pending (no Docker daemon on Hostinger) |
 
 ## 18. Railway Config-as-Code deprecation (verified 2026-11-25)
 

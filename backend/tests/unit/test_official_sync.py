@@ -427,13 +427,13 @@ def test_job_lock_interrupted_recovery_failed_publication_and_termination(env):
 def test_operator_capture_requires_review_and_registered_source(env):
     settings, db = env
     job = J.SyncJob(settings, db, index_validator=validator_ok)
-    job.import_capture("moca-digital-initiatives", MOCA_HTML.encode())
+    job.import_capture("moca-digital-initiatives", [MOCA_HTML.encode()])
     rows = records(db, source_id="moca-digital-initiatives")
     assert rows and {r.status for r in rows} == {"pending_review"} and "operator capture" in rows[0].review_reason
     with pytest.raises(ValueError):
-        J.SyncJob(settings, db).import_capture("https://evil.example", b"<p>x</p>")
+        J.SyncJob(settings, db).import_capture("https://evil.example", [b"<p>x</p>"])
     with pytest.raises(ValueError):
-        J.SyncJob(settings, db).import_capture("dyf-international-trial", BLOCKED_HTML.encode())
+        J.SyncJob(settings, db).import_capture("dyf-international-trial", [BLOCKED_HTML.encode()])
 
 
 # --------------------------------------------------------------------------- serving / chat isolation

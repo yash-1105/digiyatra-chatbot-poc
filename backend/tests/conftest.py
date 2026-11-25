@@ -28,6 +28,22 @@ PG_ADMIN_URL = os.environ.get("DY_TEST_PG_URL")
 _CREATED_PG_DBS: list[str] = []
 
 
+def _assert_isolated_pg(url: str) -> None:
+    """Destructive test databases are only ever created on a local, isolated server: a Unix
+    socket (e.g. the project's .cache/pgsock) or loopback. Never Railway/production PostgreSQL."""
+    from sqlalchemy.engine import make_url
+
+    u = make_url(url)
+    socket_dir = u.query.get("host")
+    local = (socket_dir and str(socket_dir).startswith("/")) or u.host in {"127.0.0.1", "localhost", "::1"}
+    if not local or any(x in url.lower() for x in ("railway", "rlwy", "amazonaws", "neon.tech", "supabase")):
+        raise pytest.UsageError("DY_TEST_PG_URL must point to a local isolated PostgreSQL server (socket or loopback)")
+
+
+if PG_ADMIN_URL:
+    _assert_isolated_pg(PG_ADMIN_URL)
+
+
 def new_database_url(tmp_path: Path, name: str = "test-analytics") -> str:
     if not PG_ADMIN_URL:
         return f"sqlite:///{tmp_path / (name + '.db')}"

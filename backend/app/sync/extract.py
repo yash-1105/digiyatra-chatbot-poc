@@ -339,3 +339,37 @@ def parse_sitemap(xml: bytes) -> list[str]:
     if root is None:
         return []
     return [el.text.strip() for el in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc", "loc") if el.text]
+
+
+def merge(parts: list[Extraction]) -> Extraction:
+    """Combine extractions of the same page (e.g. one saved file per FAQ tab)."""
+    if len(parts) == 1:
+        return parts[0]
+    out = Extraction(title=next((p.title for p in parts if p.title), ""), language=parts[0].language,
+                     published_on=next((p.published_on for p in parts if p.published_on), None),
+                     updated_on=next((p.updated_on for p in parts if p.updated_on), None))
+    seen: set[str] = set()
+    for p in parts:
+        out.blocked |= p.blocked
+        out.social_embed |= p.social_embed
+        out.unanswered_questions += p.unanswered_questions
+        for f in p.faqs:
+            if f.question.lower() not in seen:
+                seen.add(f.question.lower())
+                out.faqs.append(f)
+        out.sections.extend(p.sections)
+        out.links.extend(p.links)
+    out.text_chars = sum(p.text_chars for p in parts)
+    out.language = language_of("\n".join(f.question + f.answer for f in out.faqs) + "\n".join(s.text for s in out.sections))
+    return out
+
+
+EMBEDDED_URL = re.compile(
+    r"<link[^>]+rel=[\"']canonical[\"'][^>]*href=[\"']([^\"']+)|<link[^>]+href=[\"']([^\"']+)[\"'][^>]*rel=[\"']canonical|"
+    r"<meta[^>]+property=[\"']og:url[\"'][^>]*content=[\"']([^\"']+)|saved from url=\(\d+\)(\S+?)\s*-->",
+    re.I,
+)
+
+
+def embedded_urls(html: str) -> list[str]:
+    return [next(g for g in m.groups() if g) for m in EMBEDDED_URL.finditer(html[:200_000])]
