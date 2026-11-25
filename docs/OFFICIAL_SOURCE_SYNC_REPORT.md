@@ -197,3 +197,7 @@ At Railway's list prices ($20 per vCPU-month, $10 per GB-month), checked 2026-11
 3. Railway configuration migration and cron-service creation need the authenticated Railway CLI and approval. The deadline is 2026-12-01.
 4. Live provider tests, PostgreSQL integration tests and the Docker image build are pending.
 5. `CLAUDE.md` still says Sarvam is the only generative provider, while the codebase has three. This needs a separate owner decision; it was not changed here.
+
+## 12. Git status
+
+The implementation commit `9478fe7` is on the feature branch `feature/official-source-sync`, pushed to `yash-1105/digiyatra-chatbot-poc` after a successful dry run and the local pre-push check. It has not been merged to `main` and has not been deployed. The staged set was audited: no `knowledge/`, `.cache/`, `.tools/`, index, database, `.env` or credential files.
