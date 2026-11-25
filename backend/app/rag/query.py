@@ -137,9 +137,13 @@ def scoped_match(intent: str, raw: str) -> float:
     if intent in {"international_scope", "epassport_scope"}:
         domestic = "domestic flights" in text and ("supported airports" in text or "integration may vary" in text)
         roadmap = bool(re.search(r"\be[- ]?passports?\b", text)) and "roadmap" in text
+        # Verified official trial evidence (date-bounded; expired rows are filtered by the retriever).
+        full = normalize_query(raw)  # includes an official FAQ's question, which carries the trial context
+        trial = "international" in full and bool(re.search(r"\btrials?\b|\bdy-?ipt\b", full))
         if intent == "epassport_scope":
-            return 1.15 if roadmap else (0.9 if domestic else 0.0)
-        return 1.1 if domestic else 0.0
+            return 1.2 if trial and re.search(r"\be[- ]?passports?\b", text) else (
+                1.15 if roadmap else (0.9 if domestic else 0.0))
+        return 1.12 if trial else (1.1 if domestic else 0.0)
     if intent == "face_verification":
         if all(w in text for w in ("lighting", "background", "camera steady")):
             return 1.15

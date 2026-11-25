@@ -338,3 +338,28 @@ The automated suites can also be run against a deployment:
 11. **Other:**
     - `127.0.0.1` is normalised to `localhost` on unauthenticated admin redirects in local dev (Next.js behaviour); this is harmless.
     - On phones the "What's New?" tabs are a horizontally swipeable strip.
+
+## 17. Official-source synchronisation (Pipeline A)
+
+Full design, inventory and measurements: `docs/OFFICIAL_SOURCE_SYNC_REPORT.md`.
+
+- **What runs:** `backend/scripts/sync.sh` → `python -m app.cli db-upgrade` → `python -m app.cli sync-run --trigger schedule`. The job fetches only due, allow-listed official sources. It extracts, validates and versions records in PostgreSQL, validates an index build, atomically activates a new publication if the verified set changed, closes connections and exits. A lease row prevents overlapping runs, and a watchdog stops the process after `SYNC_MAX_RUNTIME_S` + 60 s.
+- **Schedule:** one consolidated run every Sunday 03:00 IST: cron `30 21 * * 6` (UTC). Weekly sources are due every `SYNC_WEEKLY_DAYS` (7) and fortnightly sources every `SYNC_FORTNIGHTLY_DAYS` (14). Due times are persisted per source, so restarts never reset them.
+- **API side:** set `OFFICIAL_KNOWLEDGE_SERVING_ENABLED=true` on the backend service. `ensure-index` (start-up) builds the 119-chunk corpus plus the active publication. After that, the API checks the publication at most every `OFFICIAL_KNOWLEDGE_REFRESH_CHECK_S`, triggered lazily by chat traffic. It rebuilds into a fresh directory and swaps only a complete, validated index. The API never contacts an official source.
+- **Proposed Railway cron service (NOT provisioned):** same private build context and image as the backend. Start command `./scripts/sync.sh`. Cron schedule `30 21 * * 6`. Restart policy `NEVER`. No public domain, no volume, 1 replica. Variables: `DATABASE_URL` referencing the existing Postgres service, `OFFICIAL_SOURCE_LOOKUP_ENABLED=true`, `ENVIRONMENT=production`. No LLM keys are needed. `KNOWLEDGE_AUTO_PUBLISH_ENABLED` stays `false` unless explicitly approved.
+- **Operator commands** (Railway shell or a laptop with the production `DATABASE_URL`): `sync-status`, `sync-pending`, `sync-review RECORD|source:ID verified|rejected|revoked --reviewer NAME`, `sync-publish`, `sync-enable|sync-disable ID`, `sync-import ID --file CAPTURE` (blocked sources; always requires review), `sync-run --source ID` (manual refresh).
+- **Content approval:** new or changed consequential records (`risk=high`) stay `pending_review` until a named reviewer verifies them. Content-owner sign-off of the original manifest remains pending.
+
+## 18. Railway Config-as-Code deprecation (verified 2026-11-25)
+
+Railway's official documentation (`docs.railway.com/reference/config-as-code`, `/infrastructure-as-code`) states that Config as Code (`railway.toml` / `railway.json`) is deprecated. Existing files keep working for legacy services **until 2026-12-01**. New services cannot opt in. The replacement is Infrastructure as Code (`.railway/railway.ts`). The public IaC reference does not document Dockerfile-path or cron options, so no hand-written replacement is committed. The supported route preserves the live service settings exactly. On the laptop with the authenticated Railway CLI, before 2026-12-01:
+
+```bash
+railway config migrate                    # preview only; writes nothing
+railway config migrate --apply            # writes .railway/railway.ts from the LIVE service settings
+railway config plan                       # review: Dockerfile path, start command, health check, replicas
+railway config migrate cutover            # stop reading railway.toml (no deploy, settings unchanged)
+railway config migrate status             # verify; `railway config migrate undo` reverts the cutover
+```
+
+Commit `.railway/railway.ts` only after reviewing that it contains `preserve()` placeholders and no secret values. Delete `railway.toml` only after the cutover. The earlier deployment report notes that the service's Dockerfile path and settings were also set explicitly on Railway, which limits the risk at the cutoff. Run `railway config plan` to confirm this. The new cron service is created through IaC or the dashboard, because Config as Code is unavailable to new services.

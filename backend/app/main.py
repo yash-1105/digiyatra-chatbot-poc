@@ -119,6 +119,7 @@ def create_app(
     app.state.login_throttle = LoginThrottle(settings.admin_login_max_failures, settings.admin_login_window_minutes)
     app.state.index_meta = None
     app.state.retriever = None
+    app.state.published_knowledge = None
     try:
         if retriever is None:
             index = KnowledgeIndex(settings.index_dir, settings.index_table)
@@ -144,6 +145,26 @@ def create_app(
                      analytics=app.state.analytics, providers=app.state.providers, usage=app.state.ai_usage, faqs=reviewed_faqs, knowledge=knowledge)
         )
         log.info("Knowledge index loaded: %d approved chunks", retriever.chunk_count)
+        app.state.published_knowledge = None
+        if settings.official_knowledge_serving_enabled and migrated:
+            from app.sync.publish import PublishedKnowledge
+
+            def swap(new_retriever, meta):
+                # One attribute assignment per object: requests see the old or the new complete index.
+                faqs = None
+                if settings.faq_cache_enabled:
+                    from app.services.faq import ReviewedFAQs
+
+                    try:
+                        faqs = ReviewedFAQs(app.state.db, settings, new_retriever)
+                    except Exception as exc:  # noqa: BLE001 - stale cache entries simply stop matching
+                        log.warning("faq unavailable after publication error=%s", type(exc).__name__)
+                service = app.state.chat_service
+                service.d.faqs = faqs
+                service.d.retriever = new_retriever
+                app.state.retriever, app.state.index_meta = new_retriever, meta
+
+            app.state.published_knowledge = PublishedKnowledge(settings, app.state.db, swap, app.state.index_meta)
     except (IndexNotBuilt, RuntimeError) as exc:
         log.error("Knowledge index unavailable: %s", exc)
         app.state.chat_service = None
@@ -162,6 +183,9 @@ def create_app(
     async def require_index(request: Request, call_next):
         if request.url.path.startswith("/api/v1/chat") and request.app.state.chat_service is None:
             return _error(503, "index_unavailable", "The knowledge base is not available. Please try again later.")
+        if request.url.path == "/api/v1/chat" and request.app.state.published_knowledge is not None:
+            # Lazy, rate-limited version check (reads PostgreSQL only; never an external source).
+            request.app.state.published_knowledge.maybe_refresh()
         response = await call_next(request)
         cookie = getattr(request.state, "anonymous_cookie_header", None)
         if cookie and "set-cookie" not in response.headers:

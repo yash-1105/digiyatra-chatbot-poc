@@ -11,6 +11,10 @@
     python -m app.cli stats                  index statistics
     python -m app.cli probe-embeddings       check whether the key can use Sarvam embeddinggemma-2
     python -m app.cli db-upgrade             apply database migrations (Alembic) to DATABASE_URL
+    python -m app.cli sync-run [--source ID ...]   official-source synchronisation (short-lived; exits when done)
+    python -m app.cli sync-status | sync-pending | sync-publish
+    python -m app.cli sync-enable ID | sync-disable ID | sync-import ID --file CAPTURE
+    python -m app.cli sync-review RECORD verified|rejected|revoked --reviewer NAME
     python -m app.cli create-admin [--email admin@gmail.com] [--reset-password]
                                              create the administrator; prompts for the password (not echoed)
 """
@@ -59,15 +63,41 @@ def cmd_ingest(settings) -> None:
     print(f"Report: {settings.knowledge_curated_dir / 'ingestion_report.md'}")
 
 
+def _publication(settings):
+    """Active verified official-source publication (serving enabled + migrated DB), else (None, [])."""
+    if not settings.official_knowledge_serving_enabled:
+        return None, []
+    from app.db.session import Database
+    from app.sync.publish import active_publication, publication_records
+
+    db = Database(settings.database_url)
+    try:
+        if not db.is_migrated():
+            return None, []
+        pub = active_publication(db)
+        return pub, publication_records(db, pub)
+    finally:
+        db.engine.dispose()
+
+
 def cmd_index(settings) -> None:
+    from app.sync.publish import INDEX_SCHEMA, record_chunk
+
     chunks, corpus = _load_chunks(settings)
+    pub, records = _publication(settings)
     embedder, reason = choose_index_embedder(settings)
     print(f"Embedder: {embedder.describe()['name']} ({reason})")
     index = KnowledgeIndex(settings.index_dir, settings.index_table)
-    n = index.build(chunks, embedder, extra_meta={"embedder_reason": reason, "corpus_sha256": corpus["corpus_sha256"],
-                                                  "requested_provider": settings.embedding_provider})
+    all_chunks = chunks + [record_chunk(r, i) for i, r in enumerate(records)]
+    n = index.build(all_chunks, embedder, extra_meta={
+        "embedder_reason": reason, "corpus_sha256": corpus["corpus_sha256"],
+        "requested_provider": settings.embedding_provider, "index_schema": INDEX_SCHEMA,
+        "publication_id": pub.id if pub else None, "publication_digest": pub.digest if pub else None,
+        "official_records": len(records), "base_chunk_count": len(chunks),
+    })
     meta = index.meta()
-    print(f"Indexed {n} chunks from {meta['document_count']} approved documents into {settings.index_dir}")
+    print(f"Indexed {n} chunks ({len(chunks)} approved corpus + {len(records)} verified official records) "
+          f"from {meta['document_count']} documents into {settings.index_dir}")
 
 
 def create_admin(
@@ -106,7 +136,10 @@ def create_admin(
 
 def cmd_ensure_index(settings) -> int:
     """Idempotent start-up step: keep a valid index, rebuild when missing/stale. Never reads raw files."""
+    from app.sync.publish import INDEX_SCHEMA
+
     _, corpus = _load_chunks(settings)
+    pub, records = _publication(settings)
     index = KnowledgeIndex(settings.index_dir, settings.index_table)
     reason = None
     if not index.exists():
@@ -117,14 +150,74 @@ def cmd_ensure_index(settings) -> int:
             reason = "built from a different corpus"
         elif meta.get("requested_provider") != settings.embedding_provider:
             reason = "embedding provider setting changed"
-        elif meta.get("chunk_count") != corpus["chunk_count"]:
+        elif meta.get("index_schema") != INDEX_SCHEMA:
+            reason = "index schema changed"
+        elif meta.get("publication_digest") != (pub.digest if pub else None):
+            reason = "official knowledge publication changed"
+        elif meta.get("chunk_count") != corpus["chunk_count"] + len(records):
             reason = "chunk count mismatch"
     if reason is None:
-        print(f"Index OK: {corpus['chunk_count']} chunks, corpus {corpus['corpus_sha256'][:12]}… (no rebuild)")
+        print(f"Index OK: {corpus['chunk_count']} corpus chunks + {len(records)} official records, "
+              f"corpus {corpus['corpus_sha256'][:12]}… (no rebuild)")
         return 0
     print(f"Rebuilding index ({reason})")
     cmd_index(settings)
     return 0
+
+
+def cmd_sync(settings, args) -> int:
+    """Pipeline A commands. Never invoked by the chat API."""
+    from pathlib import Path
+
+    from app.db.session import Database
+    from app.sync import job as J
+
+    db = Database(settings.database_url)
+    try:
+        if not db.is_migrated():
+            print("Database is not initialised. Run `python -m app.cli db-upgrade` first.")
+            return 3
+        if args.cmd == "sync-run":
+            if not settings.official_source_lookup_enabled:
+                print("OFFICIAL_SOURCE_LOOKUP_ENABLED=true is required for network synchronisation.")
+                return 3
+            code = J.SyncJob(settings, db).run(trigger=args.trigger, force=args.source)
+            report = J.status_report(db, settings)
+            print(json.dumps({"exit_code": code, "last_run": report["recent_runs"][:1],
+                              "active_publication": report["active_publication"]}, indent=2, default=str))
+            return code
+        if args.cmd == "sync-publish":
+            code = J.SyncJob(settings, db).run(trigger="manual", publish_only=True)
+            print(json.dumps(J.status_report(db, settings)["active_publication"], indent=2))
+            return code
+        if args.cmd == "sync-status":
+            J.sync_registry(db, settings)
+            print(json.dumps(J.status_report(db, settings), indent=2, ensure_ascii=False, default=str))
+        elif args.cmd == "sync-pending":
+            print(json.dumps(J.pending_records(db), indent=2, ensure_ascii=False))
+        elif args.cmd in ("sync-enable", "sync-disable"):
+            J.sync_registry(db, settings)
+            J.set_enabled(db, args.source_id, args.cmd == "sync-enable")
+            print(f"{args.source_id}: {'enabled' if args.cmd == 'sync-enable' else 'disabled'}")
+        elif args.cmd == "sync-import":
+            path = Path(args.file)
+            if path.stat().st_size > settings.sync_max_pdf_bytes:
+                raise ValueError("Capture is too large")
+            J.SyncJob(settings, db).import_capture(args.source_id, path.read_bytes())
+            print("Capture stored; resulting records require review (sync-pending).")
+        elif args.cmd == "sync-review":
+            if args.record.startswith("source:"):
+                n = J.review_source(db, args.record[7:], args.decision, args.reviewer)
+                print(f"{n} record(s) of {args.record[7:]}: {args.decision}. Run `sync-publish` to publish.")
+            else:
+                J.review_record(db, int(args.record), args.decision, args.reviewer)
+                print(f"Record {args.record}: {args.decision}. Run `sync-publish` to publish the verified set.")
+        return 0
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"Sync command failed: {exc}")
+        return 1
+    finally:
+        db.engine.dispose()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -165,6 +258,20 @@ def main(argv: list[str] | None = None) -> None:
     faq_revoke = sub.add_parser("faq-revoke")
     faq_revoke.add_argument("question")
     faq_revoke.add_argument("--locale", choices=("en", "hi"), required=True)
+    sr = sub.add_parser("sync-run")
+    sr.add_argument("--source", action="append", help="Force-refresh these registered source IDs only")
+    sr.add_argument("--trigger", default="schedule", choices=("schedule", "manual", "initial"))
+    for name in ("sync-status", "sync-pending", "sync-publish"):
+        sub.add_parser(name)
+    for name in ("sync-enable", "sync-disable"):
+        sub.add_parser(name).add_argument("source_id")
+    si = sub.add_parser("sync-import")
+    si.add_argument("source_id")
+    si.add_argument("--file", required=True, help="Operator-saved HTML/PDF of a registered official page")
+    sv = sub.add_parser("sync-review")
+    sv.add_argument("record", help="Record id, or source:<SOURCE_ID> for every pending record of a source")
+    sv.add_argument("decision", choices=("verified", "rejected", "revoked"))
+    sv.add_argument("--reviewer", required=True)
     ca = sub.add_parser("create-admin")
     ca.add_argument("--email", default="admin@gmail.com")
     ca.add_argument("--reset-password", action="store_true")
@@ -263,6 +370,8 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(f"FAQ maintenance failed ({type(exc).__name__})")
         finally:
             db.engine.dispose()
+    elif args.cmd.startswith("sync-"):
+        sys.exit(cmd_sync(settings, args))
     elif args.cmd == "create-admin":
         if not sys.stdin.isatty():
             sys.exit("create-admin must be run in an interactive terminal (the password is typed privately).")

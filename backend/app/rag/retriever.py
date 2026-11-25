@@ -9,10 +9,14 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field, replace
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.rag.embeddings import Embedder, features, tokenize
 from app.rag.query import INTENT_TERMS, SCOPED_INTENTS, intent_match, normalize_query, query_intent
 from app.rag.store import KnowledgeIndex
+
+INDIA = ZoneInfo("Asia/Kolkata")
 
 # Query expansion for common passenger phrasings (applied to keyword ranking only).
 SYNONYMS: dict[str, str] = {
@@ -237,11 +241,16 @@ class Retriever:
         candidate_ids.update(c["chunk_id"] for c in self._chunks if intent_match(intent, c))
 
         scored: list[RetrievedChunk] = []
+        today = datetime.now(INDIA).date().isoformat()
         for cid in candidate_ids:
             i = self._positions.get(cid)
             if i is None:
                 continue  # not approved / not in memory
             c = self._chunks[i]
+            # Applicability is checked locally on every request: an expired trial or a not-yet-
+            # effective notice is never served, even before the next synchronisation runs.
+            if (c.get("expires_on") and today > c["expires_on"]) or (c.get("effective_from") and today < c["effective_from"]):
+                continue
             kw = min(1.0, bm[i] / bm_max) if bm_max > 0 else 0.0
             doc_terms = set(self._tokens[i])
             coverage = len(q_core & doc_terms) / len(q_core) if q_core else 0.0

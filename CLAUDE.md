@@ -21,7 +21,7 @@
 ## 2. Content rules
 
 - Site content comes from `knowledge/raw/` and is curated in `frontend/src/content/site.ts` (source file noted per block).
-- Do NOT present as current fact: the DY-IPT international trial (draft doc), the India AI Summit 2026 event FAQ (historical), or download/journey/usage statistics.
+- Do NOT present as current fact: the DY-IPT international trial (draft doc), the India AI Summit 2026 event FAQ (historical), or download/journey/usage statistics. Publicly published official trial information is a separate source: it is served only as reviewed `verified` official records within their effective/expiry dates (sync strips usage statistics automatically).
 - Do NOT invent announcements, airport availability, contact details or statistics. Dynamic sections (announcements, airports) must show empty states or clearly-labelled snapshots when approved data is unavailable.
 - The site must stay clearly marked as an unofficial POC. No government insignia, no official Digi Yatra logo, no implied endorsement.
 - Chat mock responses must always be labelled as mock — never pass them off as AI output. Normal chat flow uses the real API (`NEXT_PUBLIC_CHAT_MODE=api`, default).
@@ -59,6 +59,7 @@ digiyatra-latest/   (GitHub: yash-1105/digiyatra-chatbot-poc)
 
 ### Backend layout (`backend/`) — full API docs in `docs/API.md`
 - `ingestion/` — pipeline: discover → manifest → parse (markdown / docx / csv) → sanitise → dedupe → QC → chunk → `knowledge/curated/*`.
+- `app/sync/` — Pipeline A: `sources.py` (allow-listed registry), `fetcher.py` (SSRF-safe HTTP), `extract.py` (HTML/FAQ/feeds), `pdf.py` (sandboxed pypdf), `policy.py` (validation/review), `job.py` (scheduler/lease/versioning), `publish.py` (atomic publication + API hot swap).
 - `app/rag/` — `embeddings.py` (LexicalEmbedder, SarvamEmbedder), `store.py` (LanceDB index: build/upsert/delete/lookup), `retriever.py` (hybrid vector + BM25), `factory.py`.
 - `app/clients/sarvam.py` — Chat Completions V2 client (timeouts, retries, typed errors).
 - `app/security/` — `guardrails.py` (input/output), `rate_limit.py`, `body_limit.py`.
@@ -78,6 +79,7 @@ Backend (inside `backend/`; venv is `backend/.venv`, pip cache `.cache/pip`):
 - PostgreSQL tests: start the project-isolated, socket-only server in `.cache/pgdata` (pgserver binaries in `.cache/pgtools`), then `DY_TEST_PG_URL='postgresql+psycopg://postgres@/postgres?host=<abs>/.cache/pgsock&port=55432' .venv/bin/python -m pytest tests/unit/test_admin_auth.py tests/unit/test_analytics.py tests/unit/test_api.py`. Never use the shared Docker daemon or system databases.
 - Any server started on this host binds 127.0.0.1 (for `scripts/start.sh` set `HOST=127.0.0.1`).
 - `.venv/bin/python -m app.cli db-upgrade` (Alembic) · `create-admin [--reset-password]` (interactive)
+- Official-source sync (Pipeline A, never from chat; see `docs/OFFICIAL_SOURCE_SYNC_REPORT.md`): `sync-run [--source ID]` (needs `OFFICIAL_SOURCE_LOOKUP_ENABLED=true`) · `sync-status` · `sync-pending` · `sync-review RECORD|source:ID verified|rejected|revoked --reviewer NAME` · `sync-publish` · `sync-enable|sync-disable ID` · `sync-import ID --file F`. Local runs use their own DB (e.g. `DATABASE_URL=sqlite:///…/backend/data/official-sync-dev.db`), never `app.db`.
 - `.venv/bin/python -m app.cli reindex` (ingest + rebuild index) · `ingest` · `index` · `reindex-file FILE` · `delete FILE` · `query "text"` · `stats` · `probe-embeddings`
 - `.venv/bin/uvicorn app.asgi:app --host 127.0.0.1 --port 8000`
 - `.venv/bin/python -m pytest` (offline) · `.venv/bin/python -m pytest -m live tests/live` · `.venv/bin/python scripts/live_eval.py` · `.venv/bin/ruff check .`

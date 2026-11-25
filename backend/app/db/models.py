@@ -180,3 +180,105 @@ class KnowledgeGap(Base):
     topic: Mapped[str] = mapped_column(String(40), primary_key=True)
     observations: Mapped[int] = mapped_column(Integer)
     last_seen: Mapped[datetime] = mapped_column(DateTime)
+
+
+# ---------------------------------------------------------------------------
+# Official-source synchronisation (Pipeline A). Written only by the operator CLI /
+# scheduled job; the chat API reads published versions and never fetches sources.
+# ---------------------------------------------------------------------------
+
+
+class OfficialSource(Base):
+    """Registry state for one allow-listed source (static or discovered child page)."""
+    __tablename__ = "official_source"
+    source_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    parent_id: Mapped[str | None] = mapped_column(String(96), index=True)
+    canonical_url: Mapped[str] = mapped_column(String(600), unique=True)
+    organization: Mapped[str] = mapped_column(String(80))
+    source_type: Mapped[str] = mapped_column(String(24))
+    language: Mapped[str] = mapped_column(String(8))
+    trust: Mapped[str] = mapped_column(String(32))
+    topic: Mapped[str] = mapped_column(String(48))
+    risk: Mapped[str] = mapped_column(String(8))
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    refresh_days: Mapped[int] = mapped_column(Integer)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime)
+    next_due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    etag: Mapped[str | None] = mapped_column(String(200))
+    last_modified: Mapped[str | None] = mapped_column(String(64))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    content_version: Mapped[int] = mapped_column(Integer)
+    verification_status: Mapped[str] = mapped_column(String(24))
+    consecutive_failures: Mapped[int] = mapped_column(Integer)
+    failure_reason: Mapped[str | None] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class OfficialRecord(Base):
+    """One versioned FAQ / section / document record extracted from an official source."""
+    __tablename__ = "official_record"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(96), index=True)
+    record_key: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    # verified | pending_review | conflict | superseded | withdrawn | rejected | historical
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    record_type: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(300))
+    category: Mapped[str | None] = mapped_column(String(200))
+    question: Mapped[str | None] = mapped_column(String(600))
+    body: Mapped[str] = mapped_column(String(20000))
+    url: Mapped[str] = mapped_column(String(700))
+    anchor: Mapped[str | None] = mapped_column(String(120))
+    organization: Mapped[str] = mapped_column(String(80))
+    language: Mapped[str] = mapped_column(String(8))
+    authority: Mapped[str] = mapped_column(String(32))
+    topic: Mapped[str] = mapped_column(String(48))
+    risk: Mapped[str] = mapped_column(String(8))
+    published_on: Mapped[str | None] = mapped_column(String(10))
+    updated_on: Mapped[str | None] = mapped_column(String(10))
+    effective_from: Mapped[str | None] = mapped_column(String(10))
+    expires_on: Mapped[str | None] = mapped_column(String(10))
+    extracted_at: Mapped[datetime] = mapped_column(DateTime)
+    review_reason: Mapped[str | None] = mapped_column(String(300))
+    reviewer: Mapped[str | None] = mapped_column(String(80))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    __table_args__ = (UniqueConstraint("source_id", "record_key", "content_hash"),
+                      Index("ix_official_record_key", "source_id", "record_key"))
+
+
+class SyncRun(Base):
+    """History of synchronisation executions (aggregate counters only)."""
+    __tablename__ = "sync_run"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(24))
+    trigger: Mapped[str] = mapped_column(String(24))
+    stats: Mapped[dict] = mapped_column(JSON)
+
+
+class KnowledgePublication(Base):
+    """An immutable, atomically activated set of verified official records."""
+    __tablename__ = "knowledge_publication"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(12))  # active | superseded
+    digest: Mapped[str] = mapped_column(String(64))
+    record_ids: Mapped[list] = mapped_column(JSON)
+    record_count: Mapped[int] = mapped_column(Integer)
+    run_id: Mapped[int | None] = mapped_column(Integer)
+    __table_args__ = (Index("uq_knowledge_publication_active", "status", unique=True,
+                            sqlite_where=text("status = 'active'"), postgresql_where=text("status = 'active'")),)
+
+
+class JobLease(Base):
+    """Cross-process lease preventing overlapping synchronisation jobs (PostgreSQL or SQLite)."""
+    __tablename__ = "job_lease"
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    holder: Mapped[str] = mapped_column(String(64))
+    acquired_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)

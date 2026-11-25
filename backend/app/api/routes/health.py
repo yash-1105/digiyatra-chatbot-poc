@@ -20,6 +20,8 @@ async def health(request: Request) -> HealthResponse:
             "chunks": st.retriever.chunk_count if getattr(st, "retriever", None) else m.get("chunk_count"),
             "embedder": m.get("embedder"),
             "updated_at": m.get("updated_at"),
+            "official_records": m.get("official_records", 0),
+            "publication_id": m.get("publication_id"),
         }
     llm = {"provider": "sarvam", "model": st.settings.sarvam_chat_model, "configured": st.llm.configured}
     # Label only (never the URL/path): lets test scripts refuse to write into the primary analytics DB.

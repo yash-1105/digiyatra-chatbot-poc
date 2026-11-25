@@ -26,13 +26,13 @@ rm -rf "$OUT"
 mkdir -p "$OUT/backend/scripts" "$OUT/knowledge"
 cp railway.toml .dockerignore "$OUT/"
 cp backend/Dockerfile backend/requirements.lock backend/alembic.ini "$OUT/backend/"
-cp backend/scripts/start.sh "$OUT/backend/scripts/"
+cp backend/scripts/start.sh backend/scripts/sync.sh "$OUT/backend/scripts/"
 for d in migrations ingestion app; do cp -R "backend/$d" "$OUT/backend/$d"; done
 cp -R knowledge/deploy "$OUT/knowledge/deploy"
 find "$OUT" \( -name __pycache__ -o -name '*.pyc' -o -name '.env*' -o -name '*.db' -o -name '*.log' \) -prune -exec rm -rf {} +
 
 # Audit: nothing outside the allow-list may be present.
-BAD=$(cd "$OUT" && find . -type f | grep -vE '^\./(railway\.toml|\.dockerignore|backend/(Dockerfile|requirements\.lock|alembic\.ini|scripts/start\.sh|(migrations|ingestion|app)/.*)|knowledge/deploy/(chunks\.jsonl|corpus\.json))$' || true)
+BAD=$(cd "$OUT" && find . -type f | grep -vE '^\./(railway\.toml|\.dockerignore|backend/(Dockerfile|requirements\.lock|alembic\.ini|scripts/(start|sync)\.sh|(migrations|ingestion|app)/.*)|knowledge/deploy/(chunks\.jsonl|corpus\.json))$' || true)
 if [ -n "$BAD" ]; then echo "ABORT: unexpected files in context:"; echo "$BAD"; rm -rf "$OUT"; exit 1; fi
 if grep -rIlE 'sk_[A-Za-z0-9]{6,}_[A-Za-z0-9]{12,}' "$OUT" >/dev/null 2>&1; then echo "ABORT: key-like string found"; rm -rf "$OUT"; exit 1; fi
 

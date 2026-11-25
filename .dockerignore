@@ -13,6 +13,7 @@ backend/*
 !backend/scripts/
 backend/scripts/*
 !backend/scripts/start.sh
+!backend/scripts/sync.sh
 !knowledge/
 knowledge/*
 !knowledge/deploy/

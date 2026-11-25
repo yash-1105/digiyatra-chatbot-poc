@@ -21,6 +21,8 @@ LEXICAL_FILE = "lexical_idf.json"
 _STR_FIELDS = [
     "chunk_id", "record_id", "source_file", "doc_title", "section", "record_type", "question", "text",
     "embed_text", "approval_status", "category", "as_of", "verification_status", "content_hash",
+    # Official-source records (optional for corpus chunks): applicability window and language.
+    "effective_from", "expires_on", "language",
 ]
 
 

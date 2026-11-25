@@ -63,6 +63,23 @@ class Settings(BaseSettings):
     knowledge_enrichment_enabled: bool = False
     official_source_lookup_enabled: bool = False
     knowledge_auto_publish_enabled: bool = False
+    # --- Official-source synchronisation (Pipeline A: operator CLI / scheduled job only) ---
+    # The API serves the active verified publication when enabled; it never fetches sources.
+    official_knowledge_serving_enabled: bool = False
+    official_knowledge_refresh_check_s: int = Field(default=300, ge=30, le=86_400)
+    sync_weekly_days: int = Field(default=7, ge=1, le=90)
+    sync_fortnightly_days: int = Field(default=14, ge=1, le=180)
+    sync_max_runtime_s: int = Field(default=900, ge=60, le=3_600)
+    sync_lock_ttl_s: int = Field(default=1_800, ge=120, le=7_200)
+    sync_request_timeout_s: float = Field(default=20.0, ge=2, le=60)
+    sync_max_html_bytes: int = Field(default=2_000_000, ge=10_000, le=10_000_000)
+    sync_max_pdf_bytes: int = Field(default=15_000_000, ge=100_000, le=40_000_000)
+    sync_max_pdf_pages: int = Field(default=120, ge=1, le=400)
+    sync_host_interval_s: float = Field(default=2.0, ge=0.0, le=30)
+    sync_max_fetches_per_run: int = Field(default=80, ge=1, le=500)
+    sync_max_retries: int = Field(default=2, ge=0, le=5)
+    sync_user_agent: str = Field(default="DigiYatraPOC-KnowledgeSync/1.0 (unofficial POC; scheduled weekly)",
+                                 max_length=160)
     context_token_budget: int = Field(default=1800, ge=256, le=12000)
     context_top_k: int = Field(default=3, ge=1, le=10)
     prompt_token_budget: int = Field(default=6000, ge=512, le=16000)

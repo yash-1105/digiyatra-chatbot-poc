@@ -23,6 +23,7 @@ COPY backend/migrations ./migrations
 COPY backend/ingestion ./ingestion
 COPY backend/app ./app
 COPY backend/scripts/start.sh ./scripts/start.sh
+COPY backend/scripts/sync.sh ./scripts/sync.sh
 COPY knowledge/deploy /app/knowledge/deploy
 
 # Unprivileged runtime user; /data holds the (rebuildable) LanceDB index — mount a Railway volume here
@@ -30,7 +31,7 @@ COPY knowledge/deploy /app/knowledge/deploy
 RUN useradd --system --uid 10001 --home /app app \
     && mkdir -p /data/lancedb \
     && chown -R app:app /app /data \
-    && chmod +x ./scripts/start.sh
+    && chmod +x ./scripts/start.sh ./scripts/sync.sh
 USER app
 
 EXPOSE 8000
