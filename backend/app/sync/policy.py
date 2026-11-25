@@ -6,6 +6,7 @@ Deterministic rules only: an LLM never extracts, approves or rewrites a claim.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -53,12 +54,19 @@ class Candidate:
     effective_from: str | None
     expires_on: str | None
     flags: list[str] = field(default_factory=list)
+    url: str | None = None                      # record permalink (post / video / timestamp), else source URL
+    extra: dict = field(default_factory=dict)   # platform provenance (see OfficialRecord Task 2 columns)
+
+    VOLATILE = ("last_verified", "quota_units")
 
     @property
     def content_hash(self) -> str:
-        return hashlib.sha256("\x1f".join(str(x or "") for x in (
-            self.record_type, self.title, self.category, self.question, self.body, self.published_on,
-            self.effective_from, self.expires_on)).encode()).hexdigest()
+        parts = [self.record_type, self.title, self.category, self.question, self.body, self.published_on,
+                 self.effective_from, self.expires_on]
+        stable = {k: v for k, v in self.extra.items() if k not in self.VOLATILE}
+        if self.url or stable:  # Task 2 provenance; Task 1 records keep their original hashes
+            parts += [self.url, json.dumps(stable, sort_keys=True, default=str)]
+        return hashlib.sha256("\x1f".join(str(x or "") for x in parts).encode()).hexdigest()
 
 
 @dataclass

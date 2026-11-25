@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 INDIA = ZoneInfo("Asia/Kolkata")
 LEASE = "official-knowledge-sync"
 ACTIVE = ("verified", "pending_review", "conflict", "historical")
+_PROVENANCE = {"topic", "risk", "historical_after_days", "organization", "authority", "source_kind", "platform",
+               "external_id", "account_id", "account_name", "start_s"}
 # Railway list prices (docs.railway.com/reference/pricing/plans, checked 2026-11-25).
 VCPU_MINUTE_USD, GB_MINUTE_USD = 0.000463, 0.000231
 
@@ -128,6 +130,8 @@ class RunStats:
     historical_records: int = 0
     stripped_statistics: int = 0
     duplicates: int = 0
+    social_posts_seen: int = 0
+    videos_seen: int = 0
     failures: dict = field(default_factory=dict)
     publication: dict = field(default_factory=dict)
     resources: dict = field(default_factory=dict)
@@ -254,6 +258,11 @@ class SyncJob:
         try:
             if spec.source_type.startswith("discovery_"):
                 return self._discover(fetcher, row, spec)
+            if spec.source_type in ("youtube_channel", "account_registry", "transcript", "social_import"):
+                from app.sync import media
+
+                media.process(self, fetcher, row, spec)
+                return []
             kind = "pdf" if spec.source_type == "pdf" else "html"
             res = fetcher.get(row.canonical_url, kind, etag=row.etag, last_modified=row.last_modified)
             if res.not_modified:
@@ -320,6 +329,10 @@ class SyncJob:
                         continue
                     base = res.url
                     urls += [(urljoin(base, h), t) for h, t in ex.links]
+                    if spec.source_type == "discovery_links" and b"twitter-tweet" in res.body:
+                        from app.sync import media
+
+                        media.persist_embedded_posts(self, row, spec, res.body.decode("utf-8", "replace"))
                 break
         if not urls and errors:
             raise errors[0]
@@ -398,7 +411,8 @@ class SyncJob:
                 self.stats.withdrawn_records += n or 0
 
     def _persist(self, row: OfficialSource, spec: SourceSpec, cands: list[P.Candidate], digest: str,
-                 etag, modified, *, operator_capture: bool = False) -> None:
+                 etag, modified, *, operator_capture: bool = False, keep_keys: set[str] | None = None,
+                 replace_missing: bool = False) -> None:
         now = utcnow()
         with self.db.session() as s:
             src = s.get(OfficialSource, row.source_id, with_for_update=True)
@@ -420,6 +434,8 @@ class SyncJob:
             seen_keys = set()
             for c in cands:
                 seen_keys.add(c.record_key)
+                cspec = replace(spec, topic=c.extra.get("topic", spec.topic), risk=c.extra.get("risk", spec.risk),
+                                historical_after_days=c.extra.get("historical_after_days", spec.historical_after_days))
                 prev = latest.get(c.record_key)
                 if prev is not None and prev.content_hash == c.content_hash:
                     continue
@@ -432,18 +448,23 @@ class SyncJob:
                     OfficialRecord.source_id != src.source_id, OfficialRecord.status.in_(ACTIVE),
                     OfficialRecord.body == c.body[:20000],
                     (OfficialRecord.question == c.question) if c.question else OfficialRecord.question.is_(None)).limit(1))
-                if same_text is not None:
-                    self.stats.duplicates += 1  # same text published under another official URL
+                same_post = c.extra.get("external_id") and s.scalar(select(OfficialRecord.id).where(
+                    OfficialRecord.source_id != src.source_id, OfficialRecord.status.in_(ACTIVE),
+                    OfficialRecord.platform == c.extra.get("platform"),
+                    OfficialRecord.external_id == c.extra["external_id"],
+                    OfficialRecord.record_type == c.record_type).limit(1))
+                if same_text is not None or same_post:
+                    self.stats.duplicates += 1  # same text / same post ID published under another official URL
                     seen_keys.add(c.record_key)
                     continue
                 changed = True
-                if P.is_historical(spec, c.published_on, self.today):
+                if P.is_historical(cspec, c.published_on, self.today):
                     status, reason = "historical", "dated announcement older than the historical threshold"
                     self.stats.historical_records += 1
                 else:
-                    status, reason = P.review_decision(spec, c, first_version=prev is None,
+                    status, reason = P.review_decision(cspec, c, first_version=prev is None,
                                                        auto_publish=self.s.knowledge_auto_publish_enabled and not operator_capture,
-                                                       conflicts=P.detect_conflicts(c, verified_counts) if spec.topic in
+                                                       conflicts=P.detect_conflicts(c, verified_counts) if cspec.topic in
                                                        {"airport_coverage", "announcements", "international_trial"} else [])
                     if operator_capture:
                         reason = "operator capture: " + (reason or "requires review")
@@ -462,11 +483,15 @@ class SyncJob:
                     source_id=src.source_id, record_key=c.record_key, version=(prev.version + 1) if prev else 1,
                     content_hash=c.content_hash, status=status, record_type=c.record_type, title=c.title[:300],
                     category=(c.category or None) and c.category[:200], question=c.question and c.question[:600],
-                    body=c.body[:20000], url=src.canonical_url, anchor=c.anchor and c.anchor[:120],
-                    organization=src.organization, language=c.language, authority=src.trust, topic=spec.topic,
-                    risk=spec.risk, published_on=c.published_on, updated_on=c.updated_on,
+                    body=c.body[:20000], url=(c.url or src.canonical_url)[:700], anchor=c.anchor and c.anchor[:120],
+                    organization=c.extra.get("organization") or src.organization, language=c.language,
+                    authority=c.extra.get("authority") or src.trust, topic=cspec.topic,
+                    risk=cspec.risk, published_on=c.published_on, updated_on=c.updated_on,
                     effective_from=c.effective_from, expires_on=c.expires_on, extracted_at=now,
-                    review_reason=reason,
+                    review_reason=reason, source_kind=c.extra.get("source_kind"), platform=c.extra.get("platform"),
+                    external_id=c.extra.get("external_id"), account_id=c.extra.get("account_id"),
+                    account_name=c.extra.get("account_name"), start_s=c.extra.get("start_s"),
+                    media={k: v for k, v in c.extra.items() if k not in _PROVENANCE} or None,
                 ))
                 if prev is None:
                     self.stats.new_records += 1
@@ -478,8 +503,16 @@ class SyncJob:
                         prev.status = "superseded"
             # Withdrawn content: only when the new extraction is complete and not suspiciously small.
             active_keys = {k for k, r in latest.items() if r.status in ("verified", "pending_review", "conflict")}
-            missing = active_keys - seen_keys
-            if missing and operator_capture:
+            missing = active_keys - seen_keys - (keep_keys or set())
+            if missing and replace_missing:
+                # A complete replacement (e.g. a corrected transcript file): older passages are superseded.
+                for key in missing:
+                    s.execute(update(OfficialRecord).where(OfficialRecord.source_id == src.source_id,
+                                                           OfficialRecord.record_key == key,
+                                                           OfficialRecord.status.in_(ACTIVE))
+                              .values(status="superseded", review_reason="replaced by a corrected transcript"))
+                changed = True
+            elif missing and operator_capture:
                 pass  # a capture may cover part of a page (one tab); it never withdraws records
             elif missing and len(seen_keys & active_keys) >= 0.5 * len(active_keys):
                 for key in missing:
@@ -547,6 +580,17 @@ class SyncJob:
                 raise ValueError(f"Capture rejected: {exc.reason}") from exc
             return {"source_id": row.source_id, "url": row.canonical_url, "new_records": self.stats.new_records,
                     "updated_records": self.stats.updated_records, "provenance": sorted(set(flags))}
+        finally:
+            release_lease(self.db, token)
+
+    def locked(self, fn, *args, **kwargs):
+        """Run an operator import under the job lease (never concurrently with a sync)."""
+        sync_registry(self.db, self.s)
+        token = acquire_lease(self.db, self.s.sync_lock_ttl_s)
+        if token is None:
+            raise RuntimeError("A synchronisation is running")
+        try:
+            return fn(self, *args, **kwargs)
         finally:
             release_lease(self.db, token)
 

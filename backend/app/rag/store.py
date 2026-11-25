@@ -23,6 +23,8 @@ _STR_FIELDS = [
     "embed_text", "approval_status", "category", "as_of", "verification_status", "content_hash",
     # Official-source records (optional for corpus chunks): applicability window and language.
     "effective_from", "expires_on", "language",
+    # Task 2 provenance: website|government|faq|social_post|video|transcript|account_profile, platform, seconds.
+    "source_kind", "platform", "start_s",
 ]
 
 

@@ -13,6 +13,10 @@ interface WireSource {
   url?: unknown;
   snippet?: unknown;
   source_file?: unknown;
+  source_type?: unknown;
+  platform?: unknown;
+  published_on?: unknown;
+  timestamp_s?: unknown;
 }
 
 interface WireChatResponse {
@@ -35,6 +39,10 @@ function parseSources(value: unknown): ChatSource[] {
       url: typeof s.url === "string" && /^https?:\/\//.test(s.url) ? s.url : undefined,
       snippet: typeof s.snippet === "string" ? s.snippet : undefined,
       file: typeof s.source_file === "string" ? s.source_file : undefined,
+      sourceType: typeof s.source_type === "string" && /^[a-z_]{2,24}$/.test(s.source_type) ? s.source_type : undefined,
+      platform: typeof s.platform === "string" && /^[a-z]{1,16}$/.test(s.platform) ? s.platform : undefined,
+      publishedOn: typeof s.published_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.published_on) ? s.published_on : undefined,
+      timestampS: typeof s.timestamp_s === "number" && Number.isInteger(s.timestamp_s) && s.timestamp_s >= 0 ? s.timestamp_s : undefined,
     }));
 }
 

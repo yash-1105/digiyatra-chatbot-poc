@@ -209,6 +209,27 @@ def cmd_sync(settings, args) -> int:
             result = J.SyncJob(settings, db).import_capture(args.source_id, blobs, url=args.url)
             print(json.dumps(result, indent=2))
             print("Capture stored; every resulting record requires review (sync-pending / sync-review-report).")
+        elif args.cmd in ("sync-import-transcript", "sync-import-social", "sync-import-videos"):
+            from app.sync import media
+
+            path = Path(args.file)
+            if not path.is_file() or path.stat().st_size > 5_000_000:
+                raise ValueError("Import file missing or larger than 5 MB")
+            data = path.read_bytes()
+            job = J.SyncJob(settings, db)
+            if args.cmd == "sync-import-transcript":
+                result = job.locked(lambda j: media.import_transcript(j, args.video_id, data, args.kind, args.language))
+            elif args.cmd == "sync-import-social":
+                result = job.locked(lambda j: media.import_social(j, args.platform, data, args.handle))
+            else:
+                if not settings.official_source_lookup_enabled:
+                    raise ValueError("OFFICIAL_SOURCE_LOOKUP_ENABLED=true is required (oEmbed verification)")
+                from app.sync.fetcher import SecureFetcher
+
+                with SecureFetcher(settings) as fetcher:
+                    result = job.locked(lambda j: media.import_videos(j, fetcher, data.decode("utf-8", "replace").split()))
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            print("Imported records require review (sync-review-report), then sync-publish.")
         elif args.cmd == "sync-export":
             from app.sync.transfer import export_bundle
 
@@ -300,6 +321,17 @@ def main(argv: list[str] | None = None) -> None:
     si.add_argument("--url", help="Allow-listed Digi Yatra Foundation page URL (registered on first import)")
     si.add_argument("--file", action="append", required=True,
                     help="Operator-saved HTML (preferred) or PDF of the page; repeat for one file per FAQ tab")
+    it = sub.add_parser("sync-import-transcript")
+    it.add_argument("video_id")
+    it.add_argument("--file", required=True, help="Organisation-supplied WebVTT/SRT caption file")
+    it.add_argument("--kind", required=True, choices=("human", "auto"), help="Creator-provided or automatic captions")
+    it.add_argument("--language", choices=("en", "hi"))
+    iso = sub.add_parser("sync-import-social")
+    iso.add_argument("--platform", required=True, choices=("x", "linkedin", "instagram", "facebook"))
+    iso.add_argument("--file", required=True, help="Organisation-provided JSON/CSV export (url, published, text)")
+    iso.add_argument("--handle", help="Account handle when the permalink does not contain it")
+    iv = sub.add_parser("sync-import-videos")
+    iv.add_argument("--file", required=True, help="Text file with official YouTube video URLs (one per line)")
     ex = sub.add_parser("sync-export")
     ex.add_argument("--out", required=True, help="Private bundle path (e.g. ../.cache/exports/official.json)")
     ib = sub.add_parser("sync-import-bundle")

@@ -6,6 +6,13 @@ import type { ChatSource } from "@/lib/api";
 import { useChatText } from "./chat-language";
 import { cn } from "@/lib/cn";
 
+const PLATFORMS: Record<string, string> = { youtube: "YouTube", x: "X", linkedin: "LinkedIn", instagram: "Instagram", facebook: "Facebook" };
+
+function clock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  return `${m}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function SourceList({ sources }: { sources: ChatSource[] }) {
   const t = useChatText();
   const [open, setOpen] = useState(false);
@@ -41,7 +48,19 @@ export function SourceList({ sources }: { sources: ChatSource[] }) {
               ) : (
                 <span className="text-ink">{s.title}</span>
               )}
-              {s.file ? (
+              {s.sourceType || s.publishedOn ? (
+                <span className="mt-0.5 block text-[0.65rem] text-ink-soft">
+                  {[
+                    s.sourceType ? (t.sourceKinds[s.sourceType] ?? null) : null,
+                    s.platform && s.sourceType !== "video" && s.sourceType !== "transcript" ? (PLATFORMS[s.platform] ?? null) : null,
+                    s.publishedOn ?? null,
+                    s.timestampS !== undefined ? `${t.at} ${clock(s.timestampS)}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              ) : null}
+              {s.file && !s.sourceType ? (
                 <span className="mt-0.5 block font-mono text-[0.65rem] text-ink-soft">
                   <span className="sr-only">{t.sourceFile} </span>
                   {s.file}

@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 HTML_TYPES = {"text/html", "application/xhtml+xml"}
 XML_TYPES = {"application/xml", "text/xml", "application/rss+xml", "application/atom+xml"}
 PDF_TYPES = {"application/pdf"}
+JSON_TYPES = {"application/json", "text/json"}
 RETRYABLE = {429, 500, 502, 503, 504}
 
 
@@ -218,12 +219,13 @@ class SecureFetcher:
             "html": (HTML_TYPES, self.s.sync_max_html_bytes),
             "xml": (XML_TYPES | {"text/html"}, self.s.sync_max_html_bytes),
             "pdf": (PDF_TYPES, self.s.sync_max_pdf_bytes),
+            "json": (JSON_TYPES, self.s.sync_max_html_bytes),
         }[kind]
         canon = self._validate_url(url)
         if respect_robots and not self.allowed_by_robots(canon):
             raise FetchError("disallowed_by_robots")
         headers = {"Accept": {"html": "text/html,application/xhtml+xml", "xml": "application/rss+xml,application/xml,text/xml",
-                              "pdf": "application/pdf"}[kind]}
+                              "pdf": "application/pdf", "json": "application/json"}[kind]}
         if etag:
             headers["If-None-Match"] = etag
         if last_modified:

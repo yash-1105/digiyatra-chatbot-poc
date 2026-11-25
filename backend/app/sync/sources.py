@@ -22,17 +22,25 @@ ALLOWED_HOSTS = {
     "civilaviation.gov.in": "Ministry of Civil Aviation",
     "www.pib.gov.in": "Press Information Bureau",
     "pib.gov.in": "Press Information Bureau",
+    # Task 2: only the documented oEmbed endpoint is requested on youtube.com (never pages, feeds or
+    # captions), and only the official Data API v3 on googleapis.com (when YOUTUBE_API_KEY is set).
+    "www.youtube.com": "YouTube (Digi Yatra Foundation channel)",
+    "youtube.com": "YouTube (Digi Yatra Foundation channel)",
+    "www.googleapis.com": "YouTube Data API v3",
 }
 
 HOST_ALIASES = {"digiyatrafoundation.com": "digiyatrafoundation.com", "www.digiyatrafoundation.com": "digiyatrafoundation.com",
-                "civilaviation.gov.in": "www.civilaviation.gov.in", "pib.gov.in": "www.pib.gov.in"}
+                "civilaviation.gov.in": "www.civilaviation.gov.in", "pib.gov.in": "www.pib.gov.in",
+                "youtube.com": "www.youtube.com"}
 
 WEEKLY, FORTNIGHTLY = "weekly", "fortnightly"
 
 # Source types handled by the extractor. Task 2 adds e.g. "social_post", "youtube_video".
 SOURCE_TYPES = {"html_page", "html_faq", "html_press", "pdf", "discovery_search", "discovery_rss",
-                "discovery_sitemap", "discovery_links"}
-TRUST = {"official_operator", "official_government", "official_press"}
+                "discovery_sitemap", "discovery_links",
+                # Task 2: one registry/scheduler for every platform (no per-platform services).
+                "youtube_channel", "transcript", "social_import", "account_registry"}
+TRUST = {"official_operator", "official_government", "official_press", "official_social"}
 
 DIGI_YATRA = re.compile(r"digi\s*-?\s*yatra|digiyatra|डिजी\s*यात्रा|डिजीयात्रा", re.I)
 # Never ingest: careers, procurement, decorative promotion and similar irrelevant pages.
@@ -147,6 +155,18 @@ SOURCES: dict[str, SourceSpec] = {s.source_id: s for s in (
         discovery=Discovery(hosts=("www.pib.gov.in",), path=r"^/PressReleasePage\.aspx\?PRID=\d+$",
                             max_children=10, child_cadence=FORTNIGHTLY),
         historical_after_days=365,
+    ),
+    # ---- Task 2: verified official channels (see app/sync/social.py for ownership evidence) ----------
+    SourceSpec(
+        "official-accounts", "registry://official-accounts", "Digi Yatra Foundation", "account_registry", "en",
+        "official_operator", FORTNIGHTLY, "official_channels", "low",
+        notes="Verified official social/YouTube channels (no network access; built from the account registry).",
+    ),
+    SourceSpec(
+        "yt-channel-digiyatrafoundation", "https://www.youtube.com/@DigiYatraFoundation", "Digi Yatra Foundation",
+        "youtube_channel", "en", "official_social", FORTNIGHTLY, "video_resources", "low",
+        notes="Uploads, playlists, metadata and caption availability via YouTube Data API v3 (YOUTUBE_API_KEY); "
+              "without a key, oEmbed verification of known official video IDs only.",
     ),
     SourceSpec(
         "pib-2331200", "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2331200",

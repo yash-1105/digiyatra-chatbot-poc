@@ -214,6 +214,12 @@ class OfficialSource(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer)
     failure_reason: Mapped[str | None] = mapped_column(String(160))
     created_at: Mapped[datetime] = mapped_column(DateTime)
+    # Task 2: social/YouTube sources (nullable for web sources).
+    platform: Mapped[str | None] = mapped_column(String(16))
+    account_id: Mapped[str | None] = mapped_column(String(96))
+    ownership_evidence: Mapped[dict | None] = mapped_column(JSON)
+    cursor: Mapped[str | None] = mapped_column(String(200))   # incremental watermark (e.g. newest post time)
+    quota_note: Mapped[str | None] = mapped_column(String(160))
 
 
 class OfficialRecord(Base):
@@ -246,8 +252,19 @@ class OfficialRecord(Base):
     review_reason: Mapped[str | None] = mapped_column(String(300))
     reviewer: Mapped[str | None] = mapped_column(String(80))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Task 2: platform provenance. source_kind: website|government|press|faq|social_post|video|
+    # transcript|account_profile. media: duration, playlist, languages, transcript status/type,
+    # referenced URLs, timestamps, claim_type (announced|proposed|future|pilot|operational).
+    source_kind: Mapped[str | None] = mapped_column(String(24))
+    platform: Mapped[str | None] = mapped_column(String(16))
+    external_id: Mapped[str | None] = mapped_column(String(96))
+    account_id: Mapped[str | None] = mapped_column(String(96))
+    account_name: Mapped[str | None] = mapped_column(String(120))
+    start_s: Mapped[int | None] = mapped_column(Integer)
+    media: Mapped[dict | None] = mapped_column(JSON)
     __table_args__ = (UniqueConstraint("source_id", "record_key", "content_hash"),
-                      Index("ix_official_record_key", "source_id", "record_key"))
+                      Index("ix_official_record_key", "source_id", "record_key"),
+                      Index("ix_official_record_external", "platform", "external_id"))
 
 
 class SyncRun(Base):

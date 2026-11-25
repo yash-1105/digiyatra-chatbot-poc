@@ -25,10 +25,11 @@ from app.db.session import Database, utcnow
 
 FORMAT = "dy-official-knowledge-bundle/1"
 SOURCE_FIELDS = ("source_id", "parent_id", "canonical_url", "organization", "source_type", "language", "trust",
-                 "topic", "risk", "refresh_days")
+                 "topic", "risk", "refresh_days", "platform", "account_id", "ownership_evidence")
 RECORD_FIELDS = ("source_id", "record_key", "version", "content_hash", "status", "record_type", "title", "category",
                  "question", "body", "url", "anchor", "organization", "language", "authority", "topic", "risk",
-                 "published_on", "updated_on", "effective_from", "expires_on", "review_reason", "reviewer")
+                 "published_on", "updated_on", "effective_from", "expires_on", "review_reason", "reviewer",
+                 "source_kind", "platform", "external_id", "account_id", "account_name", "start_s", "media")
 EXPORTABLE = ("verified", "pending_review", "conflict", "historical")
 
 
@@ -72,7 +73,8 @@ def import_bundle(db: Database, path: Path, *, dry_run: bool = False, as_pending
     now = utcnow()
     with db.session() as s:
         for src in payload["sources"]:
-            if not canonical_url(src["canonical_url"]):
+            url = src["canonical_url"].split("#")[0]
+            if not (canonical_url(url) or url.startswith("registry://")):
                 raise ValueError(f"Bundle source URL is not allow-listed: {src['source_id']}")
             if s.get(OfficialSource, src["source_id"]) is not None or s.scalar(
                     select(OfficialSource.source_id).where(OfficialSource.canonical_url == src["canonical_url"])):

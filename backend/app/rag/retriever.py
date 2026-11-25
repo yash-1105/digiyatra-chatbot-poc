@@ -141,6 +141,26 @@ def expand_query(query: str) -> str:
     return query + (" " + " ".join(extra) if extra else "")
 
 
+VIDEO_CONCEPTS = {
+    "registration": {"regist", "registration", "register", "enrol", "enroll", "enrollment", "onboard", "signup"},
+    "aadhaar": {"aadhaar"},
+    "digilocker": {"digilocker"},
+    "dependent": {"dependent", "minor", "child", "children", "kid", "infant", "family"},
+    "delete": {"delete", "deletion", "remove", "uninstall", "deactivate"},
+    "boarding": {"boarding"},
+    "privacy": {"privacy", "data", "safety", "security", "secure", "sovereign", "safe"},
+    "epassport": {"epassport", "passport", "nfc", "international", "trial", "dy", "ipt"},
+}
+
+
+def video_concepts(text: str) -> set[str]:
+    terms = set(tokenize(text)) | set(re.findall(r"[a-z]+", text.lower()))
+    found = {name for name, words in VIDEO_CONCEPTS.items() if terms & words}
+    if re.search(r"smart\s*share", text, re.I):
+        found.add("smart_share")
+    return found
+
+
 def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
@@ -187,6 +207,7 @@ class Retriever:
 
     @staticmethod
     def _hit(c: dict, score: float, vs=0.0, kw=0.0, coverage=0.0) -> RetrievedChunk:
+        provenance = {k: c.get(k) for k in ("source_kind", "platform", "start_s") if c.get(k)}
         return RetrievedChunk(
             chunk_id=c["chunk_id"],
             source_file=c["source_file"],
@@ -204,7 +225,30 @@ class Retriever:
             conflict_ids=list(c.get("conflict_ids") or []),
             urls=list(c.get("urls") or []),
             category=c.get("category") or "",
+            extra=provenance,
         )
+
+    def related_videos(self, query: str, k: int = 1) -> list[RetrievedChunk]:
+        """Metadata-only official videos for recommendation (never used as answer evidence).
+
+        Matching uses concept groups shared by the question and the verified video TITLE. A specific
+        concept in the question (e.g. ePassport, privacy, dependents) must appear in the title, so a
+        generic enrolment video is never offered for an unrelated topic and nothing is inferred."""
+        q = video_concepts(normalize_query(query))  # no intent expansion: it would add unrelated concepts
+        if not q:
+            return []
+        specific = q - {"registration"}
+        today = datetime.now(INDIA).date().isoformat()
+        scored = []
+        for c in self._chunks:
+            if c.get("record_type") != "video" or (c.get("expires_on") and today > c["expires_on"]):
+                continue
+            t = video_concepts(normalize_query(c["doc_title"]))
+            if not specific <= t or not q & t:  # every specific concept must be in the verified title
+                continue
+            scored.append((len(q & t) * 10 - len(t - q), c["chunk_id"], c))
+        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return [self._hit(c, 1.0) for _, _, c in scored[:k]]
 
     def approved_passage(self, source_file: str, *, question: str | None = None,
                          section: str | None = None) -> RetrievedChunk | None:
@@ -247,6 +291,8 @@ class Retriever:
             if i is None:
                 continue  # not approved / not in memory
             c = self._chunks[i]
+            if c.get("record_type") == "video":
+                continue  # metadata-only: recommended separately, never answer evidence
             # Applicability is checked locally on every request: an expired trial or a not-yet-
             # effective notice is never served, even before the next synchronisation runs.
             if (c.get("expires_on") and today > c["expires_on"]) or (c.get("effective_from") and today < c["effective_from"]):

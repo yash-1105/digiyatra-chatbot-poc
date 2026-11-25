@@ -20,6 +20,14 @@ export interface ChatSource {
   url?: string;
   /** Short quoted passage supporting the answer. */
   snippet?: string;
+  /** Source kind (official website, government, social post, YouTube video, transcript, official channel). */
+  sourceType?: string;
+  /** Platform name for social/video sources (e.g. youtube, x). */
+  platform?: string;
+  /** Publication date (YYYY-MM-DD) when known. */
+  publishedOn?: string;
+  /** Verified video timestamp in seconds (the URL already carries &t=). */
+  timestampS?: number;
 }
 
 export interface ChatHistoryItem {

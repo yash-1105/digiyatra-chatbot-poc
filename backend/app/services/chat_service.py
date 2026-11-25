@@ -126,6 +126,11 @@ _ERROR_MAP = {
 }
 
 
+VIDEO_REQUEST = re.compile(r"\b(?:videos?|tutorials?|youtube|watch|walkthrough|demo)\b|वीडियो|विडियो|ट्यूटोरियल|dikhao|dikha", re.I)
+PROCEDURE = re.compile(r"\bhow (?:do|can|to)\b|\bsteps?\b|\b(?:register|enrol|enroll|upload|add|delete|share)\b|"
+                       r"कैसे|kaise", re.I)
+
+
 @dataclass
 class ChatDeps:
     settings: Settings
@@ -165,6 +170,10 @@ def _source(i: int, c: RetrievedChunk) -> Source:
         score=c.score,
         time_sensitive=c.time_sensitive,
         verification_status=c.verification_status,
+        source_type=c.extra.get("source_kind") if c.extra else None,
+        platform=c.extra.get("platform") if c.extra else None,
+        published_on=c.as_of if c.extra and c.extra.get("source_kind") else None,
+        timestamp_s=int(c.extra["start_s"]) if c.extra and str(c.extra.get("start_s") or "").isdigit() else None,
     )
 
 
@@ -299,6 +308,45 @@ class ChatService:
         await self._usage(req, client, result.usage, "ok", int((time.perf_counter()-started)*1000), estimate, retrieval=retrieval)
         return result
 
+    def _recommend_video(self, req: ChatRequest, a, resp: ChatResponse) -> ChatResponse:
+        """Attach one verified official video (metadata-only) when the user asks for a video, or a
+        procedural answer would benefit from one. Never changes the grounded answer's claims; links come
+        only from verified records; nothing is fetched."""
+        if resp.status not in ("answered", "insufficient_evidence") or a.pii_types or a.injection or a.action_request:
+            return resp
+        q = normalize_query(req.message)
+        explicit = bool(VIDEO_REQUEST.search(q) or VIDEO_REQUEST.search(req.message))
+        procedural = bool(PROCEDURE.search(q) or PROCEDURE.search(req.message))
+        if not (explicit or (procedural and resp.status == "answered")):
+            return resp
+        try:
+            videos = self.d.retriever.related_videos(req.message, 1)
+        except Exception as exc:  # noqa: BLE001 - recommendations are optional
+            log.warning("video recommendation failed error=%s", type(exc).__name__)
+            return resp
+        known = {s.url for s in resp.sources}
+        videos = [v for v in videos if v.urls and v.urls[0] not in known]
+        if not videos:
+            return resp
+        v = videos[0]
+        src = _source(len(resp.sources) + 1, v)
+        url = v.urls[0]
+        if req.locale == "hi":
+            line = f"आधिकारिक डिजी यात्रा फ़ाउंडेशन वीडियो देखें: “{v.doc_title}” — {url}"
+        else:
+            line = f"You can also watch the official Digi Yatra Foundation video “{v.doc_title}”: {url}"
+        if resp.status == "insufficient_evidence" and explicit:
+            # Recommend the verified video without claiming anything about its spoken content.
+            line = (f"यह आधिकारिक डिजी यात्रा फ़ाउंडेशन वीडियो इस विषय से जुड़ा है: “{v.doc_title}” — {url}" if req.locale == "hi"
+                    else f"This official Digi Yatra Foundation video covers this topic: “{v.doc_title}”: {url}")
+            return resp.model_copy(update={"answer": line, "status": "answered", "sources": [*resp.sources, src],
+                                           "answer_mode": "knowledge"})
+        if explicit:  # the user asked for a video: lead with it, then the grounded answer
+            lead = (f"हाँ — {line}" if req.locale == "hi" else
+                    f"Yes — the official Digi Yatra Foundation video “{v.doc_title}”: {url}")
+            return resp.model_copy(update={"answer": f"{lead}\n\n{resp.answer.strip()}", "sources": [*resp.sources, src]})
+        return resp.model_copy(update={"answer": f"{resp.answer.rstrip()}\n\n{line}", "sources": [*resp.sources, src]})
+
     async def handle(self, req: ChatRequest) -> ChatResponse:
         """Answer the question, then record privacy-safe analytics (failures never affect the reply)."""
         asked_at = utcnow()  # time the question was received = start of resolution timing
@@ -337,6 +385,7 @@ class ChatService:
                 self.d.conversations.append(req.conversation_id, a.redacted_text, _strip_markers(resp.answer))
             else:
                 resp = await self._handle(req)
+            resp = self._recommend_video(req, a, resp)
         except AssistantUnavailable:
             await self._faq_metric(req, cache_outcome, started)
             await self._record(req, uuid.uuid4().hex, asked_at, classify_text, "error", 0, bool(a.pii_types), started)

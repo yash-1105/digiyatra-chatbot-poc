@@ -45,6 +45,11 @@ class Source(BaseModel):
     score: float
     time_sensitive: bool = False
     verification_status: str = "not_applicable"
+    # Task 2: website | government | faq | social_post | video | transcript | account_profile (None = approved document)
+    source_type: str | None = None
+    platform: str | None = None
+    published_on: str | None = None
+    timestamp_s: int | None = None
 
 
 class ChatResponse(BaseModel):

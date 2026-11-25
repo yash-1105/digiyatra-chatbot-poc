@@ -30,7 +30,7 @@ from app.rag.store import KnowledgeIndex
 log = logging.getLogger(__name__)
 
 OFFICIAL_PREFIX = "official:"
-INDEX_SCHEMA = "2026-11-25-official-v1"
+INDEX_SCHEMA = "2026-11-25-official-v2-media"
 SERVABLE = "verified"
 TIME_SENSITIVE_TOPICS = {"international_trial", "airport_coverage", "announcements", "policy"}
 
@@ -41,7 +41,15 @@ def record_chunk(r: OfficialRecord, order: int) -> dict:
     # Hindi records also carry the shared English concept normalisation so the ASCII
     # lexical index (and BM25) can match English, Hindi and Hinglish questions alike.
     embed = " ".join(x for x in (r.title, r.category or "", r.question or "", body) if x)
-    if r.language == "hi":
+    kind = r.source_kind or ("faq" if r.question else (
+        "government" if r.authority in ("official_government", "official_press") else "website"))
+    if kind == "video":
+        embed += f" official video tutorial youtube watch {r.topic.replace('_', ' ')}"
+    elif kind == "account_profile":
+        embed += " follow official announcements updates social media channel account"
+    elif kind == "social_post":
+        embed += f" official announcement social media post {r.topic.replace('_', ' ')}"
+    if r.language == "hi" or kind in ("video", "transcript"):
         embed = f"{embed}\n{normalize_question(embed)}"
     return {
         "chunk_id": f"official-{r.id}-{r.content_hash[:12]}",
@@ -49,7 +57,8 @@ def record_chunk(r: OfficialRecord, order: int) -> dict:
         "source_file": f"{OFFICIAL_PREFIX}{r.source_id.split(':')[0]}",
         "doc_title": r.title[:300],
         "section": (r.category or r.title)[:200],
-        "record_type": "faq" if r.question else "section",
+        "record_type": "faq" if r.question else (r.record_type if r.record_type in ("video", "transcript",
+                                                                                    "social_post", "account_profile") else "section"),
         "question": r.question,
         "text": text,
         "embed_text": embed,
@@ -58,13 +67,18 @@ def record_chunk(r: OfficialRecord, order: int) -> dict:
         "as_of": r.published_on or r.updated_on or r.extracted_at.date().isoformat(),
         "verification_status": "verified",
         "content_hash": r.content_hash,
-        "time_sensitive": r.topic in TIME_SENSITIVE_TOPICS or bool(r.expires_on),
+        "time_sensitive": r.topic in TIME_SENSITIVE_TOPICS or bool(r.expires_on) or kind == "social_post",
         "conflict_ids": [],
-        "urls": [r.url + (f"#{r.anchor}" if r.anchor and re.fullmatch(r"[\w-]{1,80}", r.anchor) else "")],
+        # Social/video/transcript records already carry their verified permalink (incl. &t=SECONDS).
+        "urls": [r.url if r.source_kind else
+                 r.url + (f"#{r.anchor}" if r.anchor and re.fullmatch(r"[\w-]{1,80}", r.anchor) else "")],
         "order": 1_000_000 + order,
         "effective_from": r.effective_from,
         "expires_on": r.expires_on,
         "language": r.language,
+        "source_kind": kind,
+        "platform": r.platform,
+        "start_s": str(r.start_s) if r.start_s is not None else None,
     }
 
 

@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     sync_host_interval_s: float = Field(default=2.0, ge=0.0, le=30)
     sync_max_fetches_per_run: int = Field(default=80, ge=1, le=500)
     sync_max_retries: int = Field(default=2, ge=0, le=5)
+    # Task 2 — social / YouTube / transcripts (all collected by the same scheduled job).
+    youtube_api_key: SecretStr | None = None   # YouTube Data API v3 key (free quota); never logged or stored
+    sync_social_since: str = Field(default="2023-01-01", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    sync_max_social_posts: int = Field(default=60, ge=1, le=1000)
+    sync_youtube_max_videos: int = Field(default=60, ge=1, le=500)
+    sync_youtube_max_pages: int = Field(default=4, ge=1, le=20)
+    sync_youtube_caption_checks: int = Field(default=10, ge=0, le=100)
+    sync_youtube_daily_quota: int = Field(default=10_000, ge=100)
     sync_user_agent: str = Field(default="DigiYatraPOC-KnowledgeSync/1.0 (unofficial POC; scheduled weekly)",
                                  max_length=160)
     context_token_budget: int = Field(default=1800, ge=256, le=12000)
